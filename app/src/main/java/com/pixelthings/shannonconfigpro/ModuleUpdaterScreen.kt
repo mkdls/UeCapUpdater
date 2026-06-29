@@ -167,7 +167,7 @@ fun ModuleUpdaterScreen(
                         echo "=== 🔧 底層 UECAP 原始載入日誌 (供進階除錯) ==="
                         echo "================================================="
                         # 🛠️ 修正：擴大篩選範圍至 config/Modem，並增加截取至 100 行，確保讀檔日誌被捕獲
-                        logcat -d -b all | grep -iE "UECAP|shamp|config|modem" | tail -n 100
+                        logcat -d -b all | grep -i "UECAP" | tail -n 100
                     """.trimIndent()
 
                     val restartResult = Shell.cmd(restartScript).exec()

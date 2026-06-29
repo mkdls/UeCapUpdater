@@ -1,0 +1,6 @@
+<resources>
+    <string name="app_name">UECapUpdater</string>
+    <string name="tab_single_file">單檔套用模式</string>
+    <string name="tab_module_extract">Magisk 模組提取</string>
+    <string name="btn_apply">套用並重載基帶</string>
+</resources>

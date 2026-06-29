@@ -34,6 +34,9 @@ import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
+import androidx.appcompat.app.AppCompatDelegate
+import androidx.core.os.LocaleListCompat
+import androidx.compose.ui.res.stringResource
 
 data class ConfigFile(val name: String, val sizeKb: Long)
 
@@ -93,31 +96,56 @@ fun MainScreen(viewModel: RootStatusViewModel = viewModel()) {
     var currentTab by remember { mutableStateOf(0) }
 
     // 🛠️ 新增：把模組的狀態存在最外層的 Scaffold 上方，讓它永不被銷毀
-    val detectedFilesState = remember { mutableStateOf<List<PbFileInfo>>(emptyList()) }
-    val moduleLogTextState = remember { mutableStateOf("等待選擇模組...\n") }
+    // 🎯 明確指定型態，徹底解決 Cannot infer type 錯誤
+    val detectedFilesState: MutableState<List<PbFileInfo>> = remember { mutableStateOf(emptyList()) }
+    val moduleLogTextState: MutableState<String> = remember { mutableStateOf("等待選擇模組...\n") }
+
+    // 取得當前的語言設定狀態
+    var currentLocale by remember {
+        mutableStateOf(AppCompatDelegate.getApplicationLocales().toLanguageTags())
+    }
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         topBar = {
             Column {
                 CenterAlignedTopAppBar(
-                    title = { Text("UECapUpdater") }, // 順便幫你把標題改成了新名字
+                    title = {
+                        // 🛠️ 使用 stringResource 自動讀取對應語言的文字
+                        Text(stringResource(id = R.string.app_name))
+                    },
+                    // 🚀 新增：語言切換按鈕
+                    actions = {
+                        TextButton(onClick = {
+                            // 判斷當前語言，進行反向切換
+                            val newLang = if (currentLocale.contains("zh")) "en" else "zh-TW"
+                            AppCompatDelegate.setApplicationLocales(LocaleListCompat.forLanguageTags(newLang))
+                            currentLocale = newLang
+                        }) {
+                            Text(
+                                text = if (currentLocale.contains("zh")) "EN" else "中",
+                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 18.sp
+                            )
+                        }
+                    },
                     colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
                         containerColor = MaterialTheme.colorScheme.primaryContainer,
                         titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
                     ),
                 )
-                // 🛠️ 加入標籤頁切換列
+                // 🛠️ 標籤頁也改用 stringResource
                 TabRow(selectedTabIndex = currentTab) {
                     Tab(
                         selected = currentTab == 0,
                         onClick = { currentTab = 0 },
-                        text = { Text("單檔套用模式", fontWeight = FontWeight.Bold) }
+                        text = { Text(stringResource(id = R.string.tab_single_file), fontWeight = FontWeight.Bold) }
                     )
                     Tab(
                         selected = currentTab == 1,
                         onClick = { currentTab = 1 },
-                        text = { Text("Magisk 模組提取", fontWeight = FontWeight.Bold) }
+                        text = { Text(stringResource(id = R.string.tab_module_extract), fontWeight = FontWeight.Bold) }
                     )
                 }
             }
@@ -397,7 +425,7 @@ suspend fun applyModemConfig(context: Context): Pair<Boolean, String> = withCont
         echo "================================================="
         echo "=== 🔧 底層 UECAP 原始載入日誌 (供進階除錯) ==="
         echo "================================================="
-        logcat -d -b all | grep -iE "UECAP|shamp" | tail -n 100
+        logcat -d -b all | grep -i "UECAP" | tail -n 100
         echo "================================================="
         echo "=== 執行完畢 ==="
         

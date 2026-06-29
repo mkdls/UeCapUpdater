@@ -1,3 +1,6 @@
 <resources>
     <string name="app_name">UECapUpdater</string>
+    <string name="tab_single_file">Single File Mode</string>
+    <string name="tab_module_extract">Magisk Module Extract</string>
+    <string name="btn_apply">Apply &amp; Reload Baseband</string>
 </resources>

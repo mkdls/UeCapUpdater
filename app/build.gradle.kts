@@ -67,4 +67,15 @@ dependencies {
 
     // libsu 核心模組
     implementation("com.github.topjohnwu.libsu:core:$libsuVersion")
+    implementation("androidx.appcompat:appcompat:1.6.1")
+}
+
+android {
+    namespace = "com.pixelthings.shannonconfigpro"
+    // ... 其他設定保持不變
+
+    // 🚀 加入這段，讓系統自動產生語言設定檔
+    androidResources {
+        generateLocaleConfig = true
+    }
 }
