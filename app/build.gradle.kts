@@ -4,7 +4,7 @@ plugins {
 }
 
 android {
-    namespace = "com.pixelthings.uecapupdater"
+    namespace = "com.pixelthings.shannonconfigpro"
     compileSdk {
         version = release(36) {
             minorApiLevel = 1
