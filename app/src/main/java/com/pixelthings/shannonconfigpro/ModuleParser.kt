@@ -44,10 +44,9 @@ object ModuleParser {
     }
 
     /**
-     * 提取選中的 binarypb，利用 libsu 取代並套用到手機系統中
+     * 提取選中的 binarypb，利用 libsu 取代並套用到手機系統中，並回傳詳細日誌
      */
-    fun applyPbFile(context: Context, fileInfo: PbFileInfo): Boolean {
-        // 1. 先把該 .binarypb 檔案從 Zip 中提取到 App 的快取資料夾
+    fun applyPbFile(context: Context, fileInfo: PbFileInfo): Pair<Boolean, String> {
         val cacheFile = File(context.cacheDir, fileInfo.fileName)
         var extractSuccess = false
 
@@ -69,26 +68,36 @@ object ModuleParser {
             }
         }.onFailure { it.printStackTrace() }
 
-        if (!extractSuccess || !cacheFile.exists()) return false
+        if (!extractSuccess || !cacheFile.exists()) return Pair(false, "❌ 提取檔案 ${fileInfo.fileName} 失敗\n")
 
-        // 2. 透過 libsu 執行 root 指令，進行全域取代與套用
+        // 🛠️ 修正點：加上與單檔模式一模一樣的 OTA 路徑與 Vendor 目標路徑
+        val targetOta = "/data/vendor/radio/ota_uecap"
+        val targetVendor = "/vendor/firmware/uecapconfig"
+
         val commands = listOf(
-            // 確保目標資料夾存在
-            "mkdir -p $TARGET_SYSTEM_DIR",
-            // 將快取檔案複製到系統基帶目錄
-            "cp ${cacheFile.absolutePath} $TARGET_SYSTEM_DIR/${fileInfo.fileName}",
-            // 修改權限，確保基帶 (Radio) 系統進程有權限讀取
-            "chmod 755 $TARGET_SYSTEM_DIR",
-            "chmod 644 $TARGET_SYSTEM_DIR/${fileInfo.fileName}",
-            // 恢復 SELinux 上下文，防止因為安全策略被擋下（Pixel 必備）
-            "chcon u:object_r:radio_vendor_data_file:s0 $TARGET_SYSTEM_DIR/${fileInfo.fileName} 2>/dev/null || true"
+            "mkdir -p $targetOta",
+            "cp ${cacheFile.absolutePath} $targetOta/${fileInfo.fileName}",
+            "chmod 755 $targetOta",
+            "chmod 644 $targetOta/${fileInfo.fileName}",
+            "chcon u:object_r:radio_vendor_data_file:s0 $targetOta/${fileInfo.fileName} 2>/dev/null || true",
+
+            // 🚀 最關鍵的替換魔法：全域命名空間掛載 (nsenter bind mount)
+            "if [ -f $targetVendor/${fileInfo.fileName} ]; then",
+            "  nsenter -t 1 -m -- umount $targetVendor/${fileInfo.fileName} 2>/dev/null",
+            "  nsenter -t 1 -m -- mount -o bind $targetOta/${fileInfo.fileName} $targetVendor/${fileInfo.fileName}",
+            "  echo \"👉 ${fileInfo.fileName} 全域掛載成功\"",
+            "else",
+            "  echo \"⚠️ 系統原廠路徑找不到 ${fileInfo.fileName}，略過掛載\"",
+            "fi"
         )
 
         val result = Shell.cmd(commands.joinToString("\n")).exec()
+        val logOutput = buildString {
+            if (result.out.isNotEmpty()) { result.out.forEach { append(it).append("\n") } }
+            if (result.err.isNotEmpty()) { append("\n--- 錯誤訊息 ---\n"); result.err.forEach { append(it).append("\n") } }
+        }
 
-        // 刪除快取臨時檔
         cacheFile.delete()
-
-        return result.isSuccess
+        return Pair(result.isSuccess, logOutput)
     }
 }

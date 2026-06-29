@@ -92,6 +92,10 @@ fun MainScreen(viewModel: RootStatusViewModel = viewModel()) {
     // 🛠️ 新增這行來記住現在切換在哪個標籤頁 (0 = 單檔, 1 = 模組)
     var currentTab by remember { mutableStateOf(0) }
 
+    // 🛠️ 新增：把模組的狀態存在最外層的 Scaffold 上方，讓它永不被銷毀
+    val detectedFilesState = remember { mutableStateOf<List<PbFileInfo>>(emptyList()) }
+    val moduleLogTextState = remember { mutableStateOf("等待選擇模組...\n") }
+
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         topBar = {
@@ -173,30 +177,31 @@ fun MainScreen(viewModel: RootStatusViewModel = viewModel()) {
                     }
                 }
 
-                if (selectedFiles.isNotEmpty()) {
-                    Button(
-                        onClick = {
-                            isApplying = true
-                            shellLogs = null
-                            applySuccess = null
-                            coroutineScope.launch {
-                                val (success, log) = applyModemConfig(context)
-                                applySuccess = success
-                                shellLogs = log
-                                isApplying = false
-                            }
-                        },
-                        modifier = Modifier.fillMaxWidth().height(56.dp),
-                        enabled = !isApplying && !isResetting && rootStatus == RootStatus.Granted,
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
-                    ) {
-                        if (isApplying) {
-                            CircularProgressIndicator(modifier = Modifier.size(24.dp), color = MaterialTheme.colorScheme.onPrimary)
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Text("正在注入基帶參數...")
-                        } else {
-                            Text("套用並重載基帶", style = MaterialTheme.typography.titleMedium)
+                // 🛠️ 移除原本外層的 if (selectedFiles.isNotEmpty()) 判斷
+                // 讓按鈕永遠顯示，但在沒有檔案時反灰不可點擊
+                Button(
+                    onClick = {
+                        isApplying = true
+                        shellLogs = null
+                        applySuccess = null
+                        coroutineScope.launch {
+                            val (success, log) = applyModemConfig(context)
+                            applySuccess = success
+                            shellLogs = log
+                            isApplying = false
                         }
+                    },
+                    modifier = Modifier.fillMaxWidth().height(56.dp),
+                    // 🛠️ 這裡加上 selectedFiles.isNotEmpty() 來控制是否可以點擊
+                    enabled = selectedFiles.isNotEmpty() && !isApplying && !isResetting && rootStatus == RootStatus.Granted,
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                ) {
+                    if (isApplying) {
+                        CircularProgressIndicator(modifier = Modifier.size(24.dp), color = MaterialTheme.colorScheme.onPrimary)
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Text("正在注入基帶參數...")
+                    } else {
+                        Text("套用並重載基帶", style = MaterialTheme.typography.titleMedium)
                     }
                 }
 
@@ -235,8 +240,8 @@ fun MainScreen(viewModel: RootStatusViewModel = viewModel()) {
                     .fillMaxSize()
                     .padding(innerPadding) // 自動避開頂部的 AppBar 和 TabRow
             ) {
-                // 直接呼叫我們剛才寫好的新介面！
-                ModuleUpdaterScreen()
+                // 🛠️ 修正：把剛剛宣告的記憶體傳遞給模組畫面
+                ModuleUpdaterScreen(detectedFilesState, moduleLogTextState)
             }
         }
     }
