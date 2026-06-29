@@ -397,7 +397,7 @@ suspend fun applyModemConfig(context: Context): Pair<Boolean, String> = withCont
         echo "================================================="
         echo "=== 🔧 底層 UECAP 原始載入日誌 (供進階除錯) ==="
         echo "================================================="
-        logcat -d -b all | grep -iE "UECAP|shamp" | tail -n 35
+        logcat -d -b all | grep -iE "UECAP|shamp" | tail -n 100
         echo "================================================="
         echo "=== 執行完畢 ==="
         

@@ -147,7 +147,7 @@ fun ModuleUpdaterScreen(
                         }
                     }
 
-                    // 🛠️ 加入重啟基帶與抓取 Logcat 的腳本 (等待 15 秒)
+                    // 🛠️ 優化版基帶重啟與日誌全面監控腳本
                     val restartScript = """
                         echo "-------------------------------------------------"
                         echo "[INFO] 清空舊日誌並安全重啟基帶與 MDS 進程..."
@@ -166,7 +166,8 @@ fun ModuleUpdaterScreen(
                         echo "================================================="
                         echo "=== 🔧 底層 UECAP 原始載入日誌 (供進階除錯) ==="
                         echo "================================================="
-                        logcat -d -b all | grep -iE "UECAP|shamp" | tail -n 35
+                        # 🛠️ 修正：擴大篩選範圍至 config/Modem，並增加截取至 100 行，確保讀檔日誌被捕獲
+                        logcat -d -b all | grep -iE "UECAP|shamp|config|modem" | tail -n 100
                     """.trimIndent()
 
                     val restartResult = Shell.cmd(restartScript).exec()
