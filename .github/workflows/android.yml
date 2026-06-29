@@ -1,43 +1,49 @@
-name: Android CI (自動打包 APK)
+name: Android CI 自動發佈
 
 on:
   push:
-    branches: [ "master", "main" ]
-  pull_request:
-    branches: [ "master", "main" ]
+    branches: [ "main" ] # 如果你的主分支叫 master，請改成 master
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
+    # ⚠️ 關鍵權限：允許 Actions 機器人幫你創建 Release
+    permissions:
+      contents: write
+
     steps:
-    - name: 📥 複製儲存庫原始碼
-      uses: actions/checkout@v4
+      - name: 📥 檢出程式碼
+        uses: actions/checkout@v3
 
-    - name: ☕ 設定 Java 環境 (JDK 17)
-      uses: actions/setup-java@v4
-      with:
-        distribution: 'zulu'
-        java-version: '17'
-        cache: 'gradle'
+      - name: ☕ 設定 JDK 17
+        uses: actions/setup-java@v3
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: gradle
 
-    - name: 🔑 賦予 Gradle 執行權限
-      run: chmod +x ./gradlew
+      - name: 🔑 賦予 gradlew 執行權限
+        run: chmod +x gradlew
 
-    - name: 🏗️ 開始自動編譯 Debug APK
-      run: ./gradlew assembleDebug
+      - name: 🔨 編譯 Debug APK
+        run: ./gradlew assembleDebug
 
-    # 🛠️ 新增這步：使用 Android SDK 內建的測試金鑰對 APK 進行 V2/V3 簽名
-    - name: ✍️ 自動為 APK 進行數位簽名
-      uses: r0adkll/sign-android-release@v1
-      id: sign_app
-      with:
-        releaseDirectory: app/build/outputs/apk/debug
-        signingKeyBase64: ${{ secrets.SIGNING_KEY }} # 如果是公開專案可自訂，若私有專案可直接使用內建 debug 簽名
-      continue-on-error: true # 防止因金鑰未設定而中斷
+      - name: 🏷️ 自動重命名 APK 並加入版本號
+        # 利用 github.run_number (執行次數) 作為動態版本號
+        run: |
+          mv app/build/outputs/apk/debug/app-debug.apk UECapUpdater-v1.0.${{ github.run_number }}.apk
+          echo "APK 已重命名為 UECapUpdater-v1.0.${{ github.run_number }}.apk"
 
-    - name: 📤 上傳生成的 APK 到 GitHub 雲端
-      uses: actions/upload-artifact@v4
-      with:
-        name: UECapUpdater-Debug-APK # 可以順便把雲端下載的壓縮檔名稱也改掉
-        path: app/build/outputs/apk/debug/*.apk # 使用通配符 *.apk 確保萬無一失
+      - name: 🚀 自動發佈到 GitHub Releases (直接提供 APK 下載)
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: UECapUpdater v1.0.${{ github.run_number }}
+          body: |
+            ✨ **自動編譯版本發佈**
+            - 版本號：v1.0.${{ github.run_number }}
+            - 支援 Magisk 底層掛載與模組直刷
+          files: UECapUpdater-v1.0.${{ github.run_number }}.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
