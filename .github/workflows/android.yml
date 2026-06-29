@@ -2,7 +2,7 @@ name: Android CI 自動發佈
 
 on:
   push:
-    branches: [ "main" ] # 如果你的主分支叫 master，請改成 master
+    branches: [ "master" ] # 如果你的主分支叫 master，請改成 master
 
 jobs:
   build:
