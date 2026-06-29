@@ -39,6 +39,5 @@ jobs:
     - name: 📤 上傳生成的 APK 到 GitHub 雲端
       uses: actions/upload-artifact@v4
       with:
-        name: ShannonConfigPro-Debug-APK
-        # 如果前面簽名成功就上傳簽名後的版本，否則維持原樣
-        path: app/build/outputs/apk/debug/*.apk
+        name: UECapUpdater-Debug-APK # 可以順便把雲端下載的壓縮檔名稱也改掉
+        path: app/build/outputs/apk/debug/*.apk # 使用通配符 *.apk 確保萬無一失
