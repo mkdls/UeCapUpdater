@@ -89,123 +89,155 @@ fun MainScreen(viewModel: RootStatusViewModel = viewModel()) {
         }
     }
 
+    // 🛠️ 新增這行來記住現在切換在哪個標籤頁 (0 = 單檔, 1 = 模組)
+    var currentTab by remember { mutableStateOf(0) }
+
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         topBar = {
-            CenterAlignedTopAppBar(
-                title = { Text("ShannonConfig Pro") },
-                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.primaryContainer,
-                    titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                ),
-            )
+            Column {
+                CenterAlignedTopAppBar(
+                    title = { Text("UECapUpdater") }, // 順便幫你把標題改成了新名字
+                    colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.primaryContainer,
+                        titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                    ),
+                )
+                // 🛠️ 加入標籤頁切換列
+                TabRow(selectedTabIndex = currentTab) {
+                    Tab(
+                        selected = currentTab == 0,
+                        onClick = { currentTab = 0 },
+                        text = { Text("單檔套用模式", fontWeight = FontWeight.Bold) }
+                    )
+                    Tab(
+                        selected = currentTab == 1,
+                        onClick = { currentTab = 1 },
+                        text = { Text("Magisk 模組提取", fontWeight = FontWeight.Bold) }
+                    )
+                }
+            }
         },
     ) { innerPadding ->
-        // 🛠️ 優化：外層 Column 加上 verticalScroll，元件超出時會自動產生滾動條，絕不擠出螢幕
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-                .padding(horizontal = 24.dp, vertical = 16.dp)
-                .verticalScroll(rememberScrollState()),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            RootStatusCard(rootStatus = rootStatus)
+        
+        // 根據選擇的標籤頁，顯示不同的畫面
+        if (currentTab == 0) {
+            // ==========================================
+            // 🏷️ 這是你原本的單檔操作畫面，完全保持原樣
+            // ==========================================
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)
+                    .padding(horizontal = 24.dp, vertical = 16.dp)
+                    .verticalScroll(rememberScrollState()),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                RootStatusCard(rootStatus = rootStatus)
 
-            FileSelectionCard(
-                files = selectedFiles,
-                isProcessing = isProcessing,
-                errorMessage = errorMessage,
-                onSelectClick = { launcher.launch("*/*") }
-            )
+                FileSelectionCard(
+                    files = selectedFiles,
+                    isProcessing = isProcessing,
+                    errorMessage = errorMessage,
+                    onSelectClick = { launcher.launch("*/*") }
+                )
 
-            var applySuccess by remember { mutableStateOf<Boolean?>(null) }
-            var shellLogs by remember { mutableStateOf<String?>(null) }
+                var applySuccess by remember { mutableStateOf<Boolean?>(null) }
+                var shellLogs by remember { mutableStateOf<String?>(null) }
 
-            // 🛠️ 移除原本的 Spacer(modifier = Modifier.weight(1f))，改用自然間距佈局
-
-            if (shellLogs != null) {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E))
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Text(
-                            text = if (applySuccess == true) "✅ 執行完成" else "❌ 執行異常",
-                            color = if (applySuccess == true) Color(0xFF4CAF50) else Color(0xFFF44336),
-                            fontWeight = FontWeight.Bold
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Box(modifier = Modifier.heightIn(max = 250.dp).verticalScroll(rememberScrollState())) {
-                            SelectionContainer {
-                                Text(
-                                    text = shellLogs!!,
-                                    color = Color(0xFF00FF00),
-                                    fontFamily = FontFamily.Monospace,
-                                    fontSize = 12.sp,
-                                    lineHeight = 16.sp
-                                )
+                if (shellLogs != null) {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E))
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Text(
+                                text = if (applySuccess == true) "✅ 執行完成" else "❌ 執行異常",
+                                color = if (applySuccess == true) Color(0xFF4CAF50) else Color(0xFFF44336),
+                                fontWeight = FontWeight.Bold
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Box(modifier = Modifier.heightIn(max = 250.dp).verticalScroll(rememberScrollState())) {
+                                SelectionContainer {
+                                    Text(
+                                        text = shellLogs!!,
+                                        color = Color(0xFF00FF00),
+                                        fontFamily = FontFamily.Monospace,
+                                        fontSize = 12.sp,
+                                        lineHeight = 16.sp
+                                    )
+                                }
                             }
                         }
                     }
                 }
-            }
 
-            if (selectedFiles.isNotEmpty()) {
-                Button(
+                if (selectedFiles.isNotEmpty()) {
+                    Button(
+                        onClick = {
+                            isApplying = true
+                            shellLogs = null
+                            applySuccess = null
+                            coroutineScope.launch {
+                                val (success, log) = applyModemConfig(context)
+                                applySuccess = success
+                                shellLogs = log
+                                isApplying = false
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth().height(56.dp),
+                        enabled = !isApplying && !isResetting && rootStatus == RootStatus.Granted,
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                    ) {
+                        if (isApplying) {
+                            CircularProgressIndicator(modifier = Modifier.size(24.dp), color = MaterialTheme.colorScheme.onPrimary)
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Text("正在注入基帶參數...")
+                        } else {
+                            Text("套用並重載基帶", style = MaterialTheme.typography.titleMedium)
+                        }
+                    }
+                }
+
+                OutlinedButton(
                     onClick = {
-                        isApplying = true
+                        isResetting = true
                         shellLogs = null
                         applySuccess = null
                         coroutineScope.launch {
-                            val (success, log) = applyModemConfig(context)
+                            val (success, log) = resetModemConfig(context)
                             applySuccess = success
                             shellLogs = log
-                            isApplying = false
+                            isResetting = false
                         }
                     },
-                    modifier = Modifier.fillMaxWidth().height(56.dp),
+                    modifier = Modifier.fillMaxWidth().height(48.dp),
                     enabled = !isApplying && !isResetting && rootStatus == RootStatus.Granted,
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
                 ) {
-                    if (isApplying) {
-                        CircularProgressIndicator(modifier = Modifier.size(24.dp), color = MaterialTheme.colorScheme.onPrimary)
+                    if (isResetting) {
+                        CircularProgressIndicator(modifier = Modifier.size(20.dp), color = MaterialTheme.colorScheme.error)
                         Spacer(modifier = Modifier.width(12.dp))
-                        Text("正在注入基帶參數...")
+                        Text("正在解除全域掛載...")
                     } else {
-                        Text("套用並重載基帶", style = MaterialTheme.typography.titleMedium)
+                        Text("恢復原廠基帶 (清除配置)")
                     }
                 }
+                Spacer(modifier = Modifier.height(16.dp))
             }
-
-            OutlinedButton(
-                onClick = {
-                    isResetting = true // 🛠️ 使用獨立的重置狀態旋轉
-                    shellLogs = null
-                    applySuccess = null
-                    coroutineScope.launch {
-                        val (success, log) = resetModemConfig(context)
-                        applySuccess = success
-                        shellLogs = log
-                        isResetting = false
-                    }
-                },
-                modifier = Modifier.fillMaxWidth().height(48.dp),
-                enabled = !isApplying && !isResetting && rootStatus == RootStatus.Granted,
-                colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
+        } else {
+            // ==========================================
+            // 🏷️ 這是我們新建的模組提取畫面
+            // ==========================================
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding) // 自動避開頂部的 AppBar 和 TabRow
             ) {
-                if (isResetting) {
-                    CircularProgressIndicator(modifier = Modifier.size(20.dp), color = MaterialTheme.colorScheme.error)
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Text("正在解除全域掛載...")
-                } else {
-                    Text("恢復原廠基帶 (清除配置)")
-                }
+                // 直接呼叫我們剛才寫好的新介面！
+                ModuleUpdaterScreen()
             }
-
-            // 底部留白緩衝
-            Spacer(modifier = Modifier.height(16.dp))
         }
     }
 }
