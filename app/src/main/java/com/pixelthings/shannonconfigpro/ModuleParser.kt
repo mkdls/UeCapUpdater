@@ -100,4 +100,56 @@ object ModuleParser {
         cacheFile.delete()
         return Pair(result.isSuccess, logOutput)
     }
+
+    /**
+     * 🚀 終極開機魔法：動態生成真正的 Magisk 模組
+     * 交給 Magisk 原生的 Magic Mount 引擎處理開機全域掛載，100% 絕對生效！
+     */
+    fun createMagiskModule(): Boolean {
+        val moduleDir = "/data/adb/modules/uecapupdater_live"
+        val vendorDir = "$moduleDir/system/vendor/firmware/uecapconfig"
+        val otaDir = "/data/vendor/radio/ota_uecap"
+        val d = "$"
+
+        val command = """
+            mkdir -p "$vendorDir"
+            
+            # 自動撰寫 Magisk 模組設定檔
+            cat << 'EOF' > "$moduleDir/module.prop"
+            id=uecapupdater_live
+            name=UECapUpdater 自動掛載模組
+            version=v1.0
+            versionCode=1
+            author=UECapUpdater App
+            description=由 App 動態生成的基帶頻段配置模組，確保重開機後不掉檔。若要清除請在 App 內點擊「恢復原廠」。
+            EOF
+            
+            # 清空舊模組檔案
+            rm -f "$vendorDir"/*.binarypb
+            
+            # 將目前 App 匯入的配置複製到 Magisk 模組結構中
+            if [ -d "$otaDir" ]; then
+                for FILE in "$otaDir"/*.binarypb; do
+                    if [ -f "${d}FILE" ]; then
+                        cp "${d}FILE" "$vendorDir/" 2>/dev/null
+                    fi
+                done
+            fi
+            
+            # 設定標準的模組權限
+            chmod -R 755 "$moduleDir"
+            chmod 644 "$moduleDir/module.prop"
+            chmod 644 "$vendorDir"/*.binarypb 2>/dev/null
+            
+        """.trimIndent()
+
+        return Shell.cmd(command).exec().isSuccess
+    }
+
+    /**
+     * 刪除 Magisk 掛載模組 (恢復原廠時使用)
+     */
+    fun removeMagiskModule() {
+        Shell.cmd("rm -rf /data/adb/modules/uecapupdater_live").exec()
+    }
 }

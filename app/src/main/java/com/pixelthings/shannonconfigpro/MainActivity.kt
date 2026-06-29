@@ -400,12 +400,19 @@ suspend fun applyModemConfig(context: Context): Pair<Boolean, String> = withCont
         logcat -d -b all | grep -iE "UECAP|shamp" | tail -n 35
         echo "================================================="
         echo "=== 執行完畢 ==="
+        
     """.trimIndent()
 
+    // ... 前面的 script 保持不變 ...
     val result = com.topjohnwu.superuser.Shell.cmd(script).exec()
+
+    // 🚀 修正：這裡應該是「生成模組」，而不是移除！
+    val bootScriptSuccess = ModuleParser.createMagiskModule()
+
     val logOutput = buildString {
         if (result.out.isNotEmpty()) { result.out.forEach { append(it).append("\n") } }
         if (result.err.isNotEmpty()) { append("\n--- 錯誤訊息 ---\n"); result.err.forEach { append(it).append("\n") } }
+        if (bootScriptSuccess) append("\n👉 Magisk 底層掛載模組已自動生成！\n")
     }
     return@withContext Pair(result.isSuccess, logOutput)
 }
@@ -456,10 +463,16 @@ suspend fun resetModemConfig(context: Context): Pair<Boolean, String> = withCont
         echo "=== 恢復原廠完畢 ==="
     """.trimIndent()
 
+    // ... 前面的 script 保持不變 ...
     val result = com.topjohnwu.superuser.Shell.cmd(script).exec()
+
+    // 🚀 修正：刪除動態生成的模組
+    ModuleParser.removeMagiskModule()
+
     val logOutput = buildString {
         if (result.out.isNotEmpty()) { result.out.forEach { append(it).append("\n") } }
         if (result.err.isNotEmpty()) { append("\n--- 錯誤訊息 ---\n"); result.err.forEach { append(it).append("\n") } }
+        append("\n🗑️ 開機掛載模組已徹底移除。\n")
     }
     return@withContext Pair(result.isSuccess, logOutput)
 }

@@ -173,6 +173,16 @@ fun ModuleUpdaterScreen(
                     if (restartResult.out.isNotEmpty()) { restartResult.out.forEach { aggregatedLogs.append(it).append("\n") } }
                     if (restartResult.err.isNotEmpty()) { restartResult.err.forEach { aggregatedLogs.append(it).append("\n") } }
 
+                    // ... 前面的 restartResult 保持不變 ...
+
+                    // 🚀 修正：呼叫動態生成 Magisk 模組
+                    val bootScriptSuccess = ModuleParser.createMagiskModule()
+                    if (bootScriptSuccess) {
+                        aggregatedLogs.append("👉 Magisk 底層掛載模組已自動生成！\n")
+                    } else {
+                        aggregatedLogs.append("⚠️ Magisk 模組生成失敗，請確認 Root 權限。\n")
+                    }
+
                     withContext(Dispatchers.Main) {
                         shellLogs = aggregatedLogs.toString()
                         applySuccess = (successCount == detectedFiles.size)
