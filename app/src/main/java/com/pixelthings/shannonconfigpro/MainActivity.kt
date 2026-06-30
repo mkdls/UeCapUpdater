@@ -152,11 +152,7 @@ fun MainScreen(viewModel: RootStatusViewModel = viewModel()) {
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                RootStatusCard(
-                    rootStatus = rootStatus,
-                    isEn = isEn,
-                    onRetryClick = { viewModel.checkRootAccess() } // 🚀 點擊時呼叫 ViewModel 重新彈出授權視窗
-                )
+                RootStatusCard(rootStatus = rootStatus, isEn = isEn, onRetryClick = { viewModel.checkRootAccess() })
 
                 FileSelectionCard(
                     files = selectedFiles,
@@ -174,7 +170,6 @@ fun MainScreen(viewModel: RootStatusViewModel = viewModel()) {
                         colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E))
                     ) {
                         Column(modifier = Modifier.padding(16.dp)) {
-                            // 🚀 統一為英文日誌標題
                             Text(
                                 text = if (applySuccess == true) "✅ Execution Complete" else "❌ Execution Failed",
                                 color = if (applySuccess == true) Color(0xFF4CAF50) else Color(0xFFF44336),
@@ -260,11 +255,7 @@ fun MainScreen(viewModel: RootStatusViewModel = viewModel()) {
 }
 
 @Composable
-private fun RootStatusCard(
-    rootStatus: RootStatus,
-    isEn: Boolean,
-    onRetryClick: () -> Unit // 🚀 新增：傳入點擊重試的行為
-) {
+private fun RootStatusCard(rootStatus: RootStatus, isEn: Boolean, onRetryClick: () -> Unit) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
@@ -298,7 +289,6 @@ private fun RootStatusCard(
                     )
                 }
                 RootStatus.Denied -> {
-                    // 🚀 關鍵修正：當被拒絕時，除了顯示文字，下方多出一顆重試按鈕
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -309,9 +299,7 @@ private fun RootStatusCard(
                             color = MaterialTheme.colorScheme.error,
                             fontWeight = FontWeight.Bold
                         )
-
                         Spacer(modifier = Modifier.height(4.dp))
-
                         ElevatedButton(
                             onClick = onRetryClick,
                             colors = ButtonDefaults.elevatedButtonColors(
@@ -413,7 +401,6 @@ suspend fun copyMultipleFiles(context: Context, uris: List<Uri>, isEn: Boolean):
     return@withContext Pair(results, errorLogs.toString())
 }
 
-// 1. 套用配置核心腳本（深度冷啟動 + 框架雙殺版）
 suspend fun applyModemConfig(context: Context): Pair<Boolean, String> = withContext(Dispatchers.IO) {
     val privateDir = context.filesDir.absolutePath
     val d = "$"
@@ -442,8 +429,7 @@ suspend fun applyModemConfig(context: Context): Pair<Boolean, String> = withCont
         nsenter -t 1 -m -- /data/local/tmp/unmount_uecap.sh
         rm -f /data/local/tmp/unmount_uecap.sh
         
-        rm -rf "${'$'}{d}OTA_DIR"/* 2>/dev/null
-        # 🚀 關鍵修復：必須強制清空基帶 temp 快取，逼迫它重讀 ap_plmn_mapping
+        rm -rf "${d}OTA_DIR"/* 2>/dev/null
         rm -rf /data/vendor/radio/modem_temp_file/* 2>/dev/null
 
         # 開始重新搬移與全域綁定掛載
@@ -469,25 +455,29 @@ suspend fun applyModemConfig(context: Context): Pair<Boolean, String> = withCont
         done
 
         echo "-------------------------------------------------"
-        echo "[INFO] Preparing for Deep Cold Boot..."
-        
         echo "[INFO] Resetting Logcat buffer..."
         logcat -b all -c
         sleep 1
         
-        # 🚀 恢復純粹的暴力強殺：逼迫基帶忘記快取，強制重新讀取 ap_plmn_mapping
-        echo "[INFO] Killing modem daemons to force cold boot..."
+        # 🚀 1. 趁網路開啟全速載入，暴力強殺基帶，逼迫進行深度冷讀取
+        echo "[INFO] Force killing modem daemons (Raw Boot)..."
         pkill -9 -f rild 2>/dev/null
         pkill -9 -f shamp 2>/dev/null
         pkill -9 -f vcd 2>/dev/null
         pkill -9 -f modem 2>/dev/null
         
-        # 🚀 核心修復：同時強殺 Android 電信框架！防止兩邊狀態脫節導致永遠無訊號
-        echo "[INFO] Restarting Telephony framework to sync state machine..."
-        pkill -9 -f com.android.phone 2>/dev/null
+        # 🚀 2. 黃金 6 秒空檔：讓基帶無干涉吃飽所有配置
+        echo "[INFO] Waiting 6s for shamp to parse all configs..."
+        sleep 6
         
-        echo "[INFO] Waiting for deep hardware and framework reboot (12s)..."
-        sleep 12
+        # 🚀 3. 電信商配置加載完成後，閃斷數據同步 Android 網路狀態機，防鎖死沒訊號
+        echo "[INFO] Resyncing Android Telephony framework..."
+        svc data disable
+        sleep 2
+        svc data enable
+        
+        echo "[INFO] Waiting for framework to register network (6s)..."
+        sleep 6
         
         echo " "
         echo "================================================="
@@ -510,7 +500,6 @@ suspend fun applyModemConfig(context: Context): Pair<Boolean, String> = withCont
     return@withContext Pair(result.isSuccess, logOutput)
 }
 
-// 2. 恢復原廠核心腳本（深度冷啟動 + 框架雙殺版）
 suspend fun resetModemConfig(context: Context): Pair<Boolean, String> = withContext(Dispatchers.IO) {
     val d = "$"
 
@@ -542,17 +531,24 @@ suspend fun resetModemConfig(context: Context): Pair<Boolean, String> = withCont
         logcat -b all -c
         sleep 1
         
-        echo "[INFO] Killing modem daemons to force cold boot..."
+        # 🚀 同步時間差攻擊流：強殺基帶
+        echo "[INFO] Force killing modem daemons (Raw Boot)..."
         pkill -9 -f rild 2>/dev/null
         pkill -9 -f shamp 2>/dev/null
         pkill -9 -f vcd 2>/dev/null
         pkill -9 -f modem 2>/dev/null
         
-        echo "[INFO] Restarting Telephony framework to sync state machine..."
-        pkill -9 -f com.android.phone 2>/dev/null
+        echo "[INFO] Waiting 6s for hardware back to pure factory state..."
+        sleep 6
         
-        echo "[INFO] Waiting for deep hardware and framework reboot (12s)..."
-        sleep 12
+        # 閃斷同步解鎖 UI
+        echo "[INFO] Resyncing Android Telephony framework..."
+        svc data disable
+        sleep 2
+        svc data enable
+        
+        echo "[INFO] Waiting for network re-registration (6s)..."
+        sleep 6
         
         echo " "
         echo "================================================="
@@ -573,4 +569,3 @@ suspend fun resetModemConfig(context: Context): Pair<Boolean, String> = withCont
     }
     return@withContext Pair(result.isSuccess, logOutput)
 }
-

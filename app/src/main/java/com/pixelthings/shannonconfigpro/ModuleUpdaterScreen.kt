@@ -136,7 +136,6 @@ fun ModuleUpdaterScreen(
                     val aggregatedLogs = StringBuilder()
                     aggregatedLogs.append("=== Module Extract & Global Mount ===\n")
 
-                    // 🚀 1. 批量掛載前，利用暫存腳本徹底清空 PID 1 舊的殘留
                     val d = "$"
                     val cleanPrevMountsScript = """
                         cat << 'EOF' > /data/local/tmp/unmount_uecap.sh
@@ -152,12 +151,10 @@ fun ModuleUpdaterScreen(
                         nsenter -t 1 -m -- /data/local/tmp/unmount_uecap.sh
                         rm -f /data/local/tmp/unmount_uecap.sh
                         
-                        # 🚀 關鍵修復：清空快取，確保批量套用時能逼迫基帶重讀所有設定
                         rm -rf /data/vendor/radio/modem_temp_file/* 2>/dev/null
                     """.trimIndent()
                     Shell.cmd(cleanPrevMountsScript).exec()
 
-                    // 2. 依次提取模組內的檔案並掛載
                     for (fileInfo in detectedFiles) {
                         val (success, fileLog) = ModuleParser.applyPbFile(context, fileInfo)
                         aggregatedLogs.append(fileLog)
@@ -172,26 +169,29 @@ fun ModuleUpdaterScreen(
                         }
                     }
 
-                    // 🚀 3. 批量模式重載：深度冷啟動 + 框架同步重啟
+                    // 🚀 同步大改造：模組批量模式也完美套用「時間差攻擊法」
                     val restartScript = """
                         echo "-------------------------------------------------"
-                        echo "[INFO] Preparing for Deep Cold Boot..."
-                        
                         echo "[INFO] Resetting Logcat buffer..."
                         logcat -b all -c
                         sleep 1
                         
-                        echo "[INFO] Killing modem daemons to force ap_plmn_mapping reload..."
+                        echo "[INFO] Force killing modem daemons (Raw Boot)..."
                         pkill -9 -f rild 2>/dev/null
                         pkill -9 -f shamp 2>/dev/null
                         pkill -9 -f vcd 2>/dev/null
                         pkill -9 -f modem 2>/dev/null
                         
-                        echo "[INFO] Restarting Telephony framework to sync state machine..."
-                        pkill -9 -f com.android.phone 2>/dev/null
+                        echo "[INFO] Waiting 6s for shamp to parse all configs..."
+                        sleep 6
                         
-                        echo "[INFO] Waiting for deep hardware and framework reboot (12s)..."
-                        sleep 12
+                        echo "[INFO] Resyncing Android Telephony framework..."
+                        svc data disable
+                        sleep 2
+                        svc data enable
+                        
+                        echo "[INFO] Waiting for hardware and data lines (6s)..."
+                        sleep 6
                         
                         echo " "
                         echo "================================================="
