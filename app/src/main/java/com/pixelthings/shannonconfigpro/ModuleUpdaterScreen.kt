@@ -151,6 +151,9 @@ fun ModuleUpdaterScreen(
                         chmod 755 /data/local/tmp/unmount_uecap.sh
                         nsenter -t 1 -m -- /data/local/tmp/unmount_uecap.sh
                         rm -f /data/local/tmp/unmount_uecap.sh
+                        
+                        # 🚀 關鍵修復：清空快取，確保批量套用時能逼迫基帶重讀所有設定
+                        rm -rf /data/vendor/radio/modem_temp_file/* 2>/dev/null
                     """.trimIndent()
                     Shell.cmd(cleanPrevMountsScript).exec()
 
@@ -169,36 +172,32 @@ fun ModuleUpdaterScreen(
                         }
                     }
 
-                    // 🚀 3. 同步升級為官方與防斷訊混合重載腳本
+                    // 🚀 3. 批量模式重載：深度冷啟動 + 框架同步重啟
                     val restartScript = """
                         echo "-------------------------------------------------"
-                        echo "[INFO] Syncing Android framework to safe state..."
-                        settings put global airplane_mode_on 1
-                        am broadcast -a android.intent.action.AIRPLANE_MODE --ez state true >/dev/null 2>&1
-                        sleep 2
+                        echo "[INFO] Preparing for Deep Cold Boot..."
                         
-                        echo "[INFO] Clearing logcat buffers..."
+                        echo "[INFO] Resetting Logcat buffer..."
                         logcat -b all -c
+                        sleep 1
                         
-                        echo "[INFO] Killing modem processes to clear RAM cache..."
+                        echo "[INFO] Killing modem daemons to force ap_plmn_mapping reload..."
                         pkill -9 -f rild 2>/dev/null
                         pkill -9 -f shamp 2>/dev/null
                         pkill -9 -f vcd 2>/dev/null
                         pkill -9 -f modem 2>/dev/null
-                        sleep 3
                         
-                        echo "[INFO] Restoring radio state and reviving network..."
-                        settings put global airplane_mode_on 0
-                        am broadcast -a android.intent.action.AIRPLANE_MODE --ez state false >/dev/null 2>&1
+                        echo "[INFO] Restarting Telephony framework to sync state machine..."
+                        pkill -9 -f com.android.phone 2>/dev/null
                         
-                        echo "[INFO] Waiting for hardware and data lines (12s)..."
+                        echo "[INFO] Waiting for deep hardware and framework reboot (12s)..."
                         sleep 12
                         
                         echo " "
                         echo "================================================="
-                        echo "=== 🔧 Raw UECAP Loading Logs (Advanced Debugging) ==="
+                        echo "=== 🔧 Complete UECAP/shamp Boot Logs ==="
                         echo "================================================="
-                        logcat -d -b all | grep -i "UECAP" | tail -n 100
+                        logcat -d -b all | grep -iE "UECAP|shamp"
                         echo "================================================="
                         echo "=== Done ==="
                     """.trimIndent()

@@ -413,7 +413,7 @@ suspend fun copyMultipleFiles(context: Context, uris: List<Uri>, isEn: Boolean):
     return@withContext Pair(results, errorLogs.toString())
 }
 
-// 1. 套用配置核心腳本（雙重保險卸載 + 防斷訊 pkill）
+// 1. 套用配置核心腳本（深度冷啟動 + 框架雙殺版）
 suspend fun applyModemConfig(context: Context): Pair<Boolean, String> = withContext(Dispatchers.IO) {
     val privateDir = context.filesDir.absolutePath
     val d = "$"
@@ -428,15 +428,12 @@ suspend fun applyModemConfig(context: Context): Pair<Boolean, String> = withCont
         
         mkdir -p "${d}OTA_DIR"
         
-        # 🔥 終極殺招：寫入獨立腳本並丟入 PID 1 執行，徹底避開 Android 缺少指令的問題
         echo "[INFO] Cleaning previous active mounts in PID 1..."
         cat << 'EOF' > /data/local/tmp/unmount_uecap.sh
         #!/system/bin/sh
-        # 1. 掃描核心掛載表
         for m in ${d}(grep "uecapconfig" /proc/mounts | awk '{print ${d}2}'); do
             umount -l "${d}m" 2>/dev/null
         done
-        # 2. 盲目暴力卸載（雙重保險）
         for f in /vendor/firmware/uecapconfig/*.binarypb; do
             umount -l "${d}f" 2>/dev/null
         done
@@ -445,7 +442,9 @@ suspend fun applyModemConfig(context: Context): Pair<Boolean, String> = withCont
         nsenter -t 1 -m -- /data/local/tmp/unmount_uecap.sh
         rm -f /data/local/tmp/unmount_uecap.sh
         
-        rm -rf "${d}OTA_DIR"/* 2>/dev/null
+        rm -rf "${'$'}{d}OTA_DIR"/* 2>/dev/null
+        # 🚀 關鍵修復：必須強制清空基帶 temp 快取，逼迫它重讀 ap_plmn_mapping
+        rm -rf /data/vendor/radio/modem_temp_file/* 2>/dev/null
 
         # 開始重新搬移與全域綁定掛載
         for FILE in "$privateDir"/*.binarypb; do
@@ -470,31 +469,31 @@ suspend fun applyModemConfig(context: Context): Pair<Boolean, String> = withCont
         done
 
         echo "-------------------------------------------------"
-        echo "[INFO] Syncing Android framework to safe state..."
-        settings put global airplane_mode_on 1
-        am broadcast -a android.intent.action.AIRPLANE_MODE --ez state true >/dev/null 2>&1
-        sleep 2
-        logcat -b all -c
+        echo "[INFO] Preparing for Deep Cold Boot..."
         
-        echo "[INFO] Killing modem processes to clear RAM cache..."
+        echo "[INFO] Resetting Logcat buffer..."
+        logcat -b all -c
+        sleep 1
+        
+        # 🚀 恢復純粹的暴力強殺：逼迫基帶忘記快取，強制重新讀取 ap_plmn_mapping
+        echo "[INFO] Killing modem daemons to force cold boot..."
         pkill -9 -f rild 2>/dev/null
         pkill -9 -f shamp 2>/dev/null
         pkill -9 -f vcd 2>/dev/null
         pkill -9 -f modem 2>/dev/null
-        sleep 3
         
-        echo "[INFO] Restoring radio state and reviving network..."
-        settings put global airplane_mode_on 0
-        am broadcast -a android.intent.action.AIRPLANE_MODE --ez state false >/dev/null 2>&1
+        # 🚀 核心修復：同時強殺 Android 電信框架！防止兩邊狀態脫節導致永遠無訊號
+        echo "[INFO] Restarting Telephony framework to sync state machine..."
+        pkill -9 -f com.android.phone 2>/dev/null
         
-        echo "[INFO] Waiting for hardware and data lines (12s)..."
+        echo "[INFO] Waiting for deep hardware and framework reboot (12s)..."
         sleep 12
         
         echo " "
         echo "================================================="
-        echo "=== 🔧 Raw UECAP Loading Logs (Advanced Debugging) ==="
+        echo "=== 🔧 Complete UECAP/shamp Boot Logs ==="
         echo "================================================="
-        logcat -d -b all | grep -i "UECAP" | tail -n 100
+        logcat -d -b all | grep -iE "UECAP|shamp"
         echo "================================================="
         echo "=== Done ==="
         
@@ -511,7 +510,7 @@ suspend fun applyModemConfig(context: Context): Pair<Boolean, String> = withCont
     return@withContext Pair(result.isSuccess, logOutput)
 }
 
-// 2. 恢復原廠核心腳本（雙重保險卸載 + 防斷訊 pkill）
+// 2. 恢復原廠核心腳本（深度冷啟動 + 框架雙殺版）
 suspend fun resetModemConfig(context: Context): Pair<Boolean, String> = withContext(Dispatchers.IO) {
     val d = "$"
 
@@ -521,7 +520,6 @@ suspend fun resetModemConfig(context: Context): Pair<Boolean, String> = withCont
         echo "================================================="
         
         echo "[INFO] Scanning and forcefully unmounting active overrides in PID 1..."
-        # 🔥 終極殺招：寫入獨立腳本並丟入 PID 1 執行
         cat << 'EOF' > /data/local/tmp/unmount_uecap.sh
         #!/system/bin/sh
         for m in ${d}(grep "uecapconfig" /proc/mounts | awk '{print ${d}2}'); do
@@ -540,31 +538,27 @@ suspend fun resetModemConfig(context: Context): Pair<Boolean, String> = withCont
         rm -rf /data/vendor/radio/ota_uecap/* 2>/dev/null
         rm -rf /data/vendor/radio/modem_temp_file/* 2>/dev/null
         
-        echo "[INFO] Syncing Android framework to safe state..."
-        settings put global airplane_mode_on 1
-        am broadcast -a android.intent.action.AIRPLANE_MODE --ez state true >/dev/null 2>&1
-        sleep 2
+        echo "[INFO] Resetting Logcat buffer..."
         logcat -b all -c
+        sleep 1
         
-        echo "[INFO] Killing modem processes to clear RAM cache..."
+        echo "[INFO] Killing modem daemons to force cold boot..."
         pkill -9 -f rild 2>/dev/null
         pkill -9 -f shamp 2>/dev/null
         pkill -9 -f vcd 2>/dev/null
         pkill -9 -f modem 2>/dev/null
-        sleep 3
         
-        echo "[INFO] Restoring radio state and reviving network..."
-        settings put global airplane_mode_on 0
-        am broadcast -a android.intent.action.AIRPLANE_MODE --ez state false >/dev/null 2>&1
+        echo "[INFO] Restarting Telephony framework to sync state machine..."
+        pkill -9 -f com.android.phone 2>/dev/null
         
-        echo "[INFO] Waiting for network re-registration (12s)..."
+        echo "[INFO] Waiting for deep hardware and framework reboot (12s)..."
         sleep 12
         
         echo " "
         echo "================================================="
-        echo "=== 🔧 Raw UECAP Loading Logs (Advanced Debugging) ==="
+        echo "=== 🔧 Complete UECAP/shamp Boot Logs ==="
         echo "================================================="
-        logcat -d -b all | grep -iE "UECAP|shamp" | tail -n 35
+        logcat -d -b all | grep -iE "UECAP|shamp"
         echo "================================================="
         echo "=== Factory Reset Complete ==="
     """.trimIndent()
@@ -579,3 +573,4 @@ suspend fun resetModemConfig(context: Context): Pair<Boolean, String> = withCont
     }
     return@withContext Pair(result.isSuccess, logOutput)
 }
+
