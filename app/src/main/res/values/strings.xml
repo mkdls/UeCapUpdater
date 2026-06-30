@@ -2,5 +2,14 @@
     <string name="app_name">UECapUpdater</string>
     <string name="tab_single_file">Single File Mode</string>
     <string name="tab_module_extract">Magisk Module Extract</string>
-    <string name="btn_apply">Apply &amp; Reload Baseband</string>
+    <string name="btn_apply_reload">Apply &amp; Reload Baseband</string>
+    <string name="btn_restore_factory">Restore Factory Baseband</string>
+    <string name="btn_select_files">Select Multiple Files</string>
+    <string name="btn_reselect_files">Reselect Multiple Files</string>
+
+    <string name="card_title_baseband">Baseband Config Files</string>
+    <string name="msg_no_file_selected">No .binarypb files selected yet</string>
+    <string name="btn_select_modules">Select Multiple Magisk/KernelSU Modules (.zip)</string>
+    <string name="title_detected_list">Detected Configuration Files List:</string>
+    <string name="btn_apply_all_modules">Apply All Imported Configurations</string>
 </resources>

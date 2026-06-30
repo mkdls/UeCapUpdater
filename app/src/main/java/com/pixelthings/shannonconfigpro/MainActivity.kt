@@ -4,11 +4,12 @@ import android.content.Context
 import android.net.Uri
 import android.os.Bundle
 import android.provider.OpenableColumns
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.app.AppCompatDelegate
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -20,28 +21,29 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.os.LocaleListCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.pixelthings.shannonconfigpro.ui.theme.ShannonConfigProTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
-import androidx.appcompat.app.AppCompatDelegate
-import androidx.core.os.LocaleListCompat
-import androidx.compose.ui.res.stringResource
+import com.pixelthings.shannonconfigpro.R
 
 data class ConfigFile(val name: String, val sizeKb: Long)
 
-class MainActivity : ComponentActivity() {
+class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
+        setTheme(androidx.appcompat.R.style.Theme_AppCompat_Light_NoActionBar)
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
@@ -59,10 +61,14 @@ fun MainScreen(viewModel: RootStatusViewModel = viewModel()) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
 
+    val configuration = LocalConfiguration.current
+    val currentLocaleTag = configuration.locales[0].toLanguageTag()
+    val isEn = currentLocaleTag.contains("en", ignoreCase = true)
+
     var selectedFiles by remember { mutableStateOf<List<ConfigFile>>(emptyList()) }
     var isProcessing by remember { mutableStateOf(false) }
     var isApplying by remember { mutableStateOf(false) }
-    var isResetting by remember { mutableStateOf(false) } // 🛠️ 獨立的重置狀態
+    var isResetting by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(Unit) {
@@ -80,10 +86,10 @@ fun MainScreen(viewModel: RootStatusViewModel = viewModel()) {
             isProcessing = true
             errorMessage = null
             coroutineScope.launch {
-                val (results, errorDbg) = copyMultipleFiles(context, uris)
+                val (results, errorDbg) = copyMultipleFiles(context, uris, isEn)
                 selectedFiles = results
                 if (results.isEmpty()) {
-                    errorMessage = "讀取失敗詳細原因：\n$errorDbg"
+                    errorMessage = if (isEn) "Read failed. Detailed reasons:\n$errorDbg" else "讀取失敗詳細原因：\n$errorDbg"
                 }
                 isProcessing = false
             }
@@ -92,38 +98,23 @@ fun MainScreen(viewModel: RootStatusViewModel = viewModel()) {
         }
     }
 
-    // 🛠️ 新增這行來記住現在切換在哪個標籤頁 (0 = 單檔, 1 = 模組)
     var currentTab by remember { mutableStateOf(0) }
-
-    // 🛠️ 新增：把模組的狀態存在最外層的 Scaffold 上方，讓它永不被銷毀
-    // 🎯 明確指定型態，徹底解決 Cannot infer type 錯誤
     val detectedFilesState: MutableState<List<PbFileInfo>> = remember { mutableStateOf(emptyList()) }
-    val moduleLogTextState: MutableState<String> = remember { mutableStateOf("等待選擇模組...\n") }
-
-    // 取得當前的語言設定狀態
-    var currentLocale by remember {
-        mutableStateOf(AppCompatDelegate.getApplicationLocales().toLanguageTags())
-    }
+    val moduleLogTextState: MutableState<String> = remember { mutableStateOf(if (isEn) "Waiting for modules...\n" else "等待選擇模組...\n") }
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         topBar = {
             Column {
                 CenterAlignedTopAppBar(
-                    title = {
-                        // 🛠️ 使用 stringResource 自動讀取對應語言的文字
-                        Text(stringResource(id = R.string.app_name))
-                    },
-                    // 🚀 新增：語言切換按鈕
+                    title = { Text(stringResource(id = R.string.app_name)) },
                     actions = {
                         TextButton(onClick = {
-                            // 判斷當前語言，進行反向切換
-                            val newLang = if (currentLocale.contains("zh")) "en" else "zh-TW"
-                            AppCompatDelegate.setApplicationLocales(LocaleListCompat.forLanguageTags(newLang))
-                            currentLocale = newLang
+                            val newLocaleTag = if (isEn) "zh-TW" else "en"
+                            AppCompatDelegate.setApplicationLocales(LocaleListCompat.forLanguageTags(newLocaleTag))
                         }) {
                             Text(
-                                text = if (currentLocale.contains("zh")) "EN" else "中",
+                                text = if (isEn) "EN" else "中",
                                 color = MaterialTheme.colorScheme.onPrimaryContainer,
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 18.sp
@@ -135,7 +126,7 @@ fun MainScreen(viewModel: RootStatusViewModel = viewModel()) {
                         titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
                     ),
                 )
-                // 🛠️ 標籤頁也改用 stringResource
+
                 TabRow(selectedTabIndex = currentTab) {
                     Tab(
                         selected = currentTab == 0,
@@ -151,12 +142,7 @@ fun MainScreen(viewModel: RootStatusViewModel = viewModel()) {
             }
         },
     ) { innerPadding ->
-        
-        // 根據選擇的標籤頁，顯示不同的畫面
         if (currentTab == 0) {
-            // ==========================================
-            // 🏷️ 這是你原本的單檔操作畫面，完全保持原樣
-            // ==========================================
             Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -166,7 +152,11 @@ fun MainScreen(viewModel: RootStatusViewModel = viewModel()) {
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                RootStatusCard(rootStatus = rootStatus)
+                RootStatusCard(
+                    rootStatus = rootStatus,
+                    isEn = isEn,
+                    onRetryClick = { viewModel.checkRootAccess() } // 🚀 點擊時呼叫 ViewModel 重新彈出授權視窗
+                )
 
                 FileSelectionCard(
                     files = selectedFiles,
@@ -184,8 +174,9 @@ fun MainScreen(viewModel: RootStatusViewModel = viewModel()) {
                         colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E))
                     ) {
                         Column(modifier = Modifier.padding(16.dp)) {
+                            // 🚀 統一為英文日誌標題
                             Text(
-                                text = if (applySuccess == true) "✅ 執行完成" else "❌ 執行異常",
+                                text = if (applySuccess == true) "✅ Execution Complete" else "❌ Execution Failed",
                                 color = if (applySuccess == true) Color(0xFF4CAF50) else Color(0xFFF44336),
                                 fontWeight = FontWeight.Bold
                             )
@@ -205,8 +196,6 @@ fun MainScreen(viewModel: RootStatusViewModel = viewModel()) {
                     }
                 }
 
-                // 🛠️ 移除原本外層的 if (selectedFiles.isNotEmpty()) 判斷
-                // 讓按鈕永遠顯示，但在沒有檔案時反灰不可點擊
                 Button(
                     onClick = {
                         isApplying = true
@@ -220,16 +209,15 @@ fun MainScreen(viewModel: RootStatusViewModel = viewModel()) {
                         }
                     },
                     modifier = Modifier.fillMaxWidth().height(56.dp),
-                    // 🛠️ 這裡加上 selectedFiles.isNotEmpty() 來控制是否可以點擊
                     enabled = selectedFiles.isNotEmpty() && !isApplying && !isResetting && rootStatus == RootStatus.Granted,
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
                 ) {
                     if (isApplying) {
                         CircularProgressIndicator(modifier = Modifier.size(24.dp), color = MaterialTheme.colorScheme.onPrimary)
                         Spacer(modifier = Modifier.width(12.dp))
-                        Text("正在注入基帶參數...")
+                        Text("Injecting modem parameters...")
                     } else {
-                        Text("套用並重載基帶", style = MaterialTheme.typography.titleMedium)
+                        Text(stringResource(id = R.string.btn_apply_reload), style = MaterialTheme.typography.titleMedium)
                     }
                 }
 
@@ -252,23 +240,19 @@ fun MainScreen(viewModel: RootStatusViewModel = viewModel()) {
                     if (isResetting) {
                         CircularProgressIndicator(modifier = Modifier.size(20.dp), color = MaterialTheme.colorScheme.error)
                         Spacer(modifier = Modifier.width(12.dp))
-                        Text("正在解除全域掛載...")
+                        Text("Unmounting global configs...")
                     } else {
-                        Text("恢復原廠基帶 (清除配置)")
+                        Text(stringResource(id = R.string.btn_restore_factory))
                     }
                 }
                 Spacer(modifier = Modifier.height(16.dp))
             }
         } else {
-            // ==========================================
-            // 🏷️ 這是我們新建的模組提取畫面
-            // ==========================================
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(innerPadding) // 自動避開頂部的 AppBar 和 TabRow
+                    .padding(innerPadding)
             ) {
-                // 🛠️ 修正：把剛剛宣告的記憶體傳遞給模組畫面
                 ModuleUpdaterScreen(detectedFilesState, moduleLogTextState)
             }
         }
@@ -276,18 +260,72 @@ fun MainScreen(viewModel: RootStatusViewModel = viewModel()) {
 }
 
 @Composable
-private fun RootStatusCard(rootStatus: RootStatus) {
+private fun RootStatusCard(
+    rootStatus: RootStatus,
+    isEn: Boolean,
+    onRetryClick: () -> Unit // 🚀 新增：傳入點擊重試的行為
+) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
     ) {
-        Column(modifier = Modifier.fillMaxWidth().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("Root 授權狀態", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text(
+                text = if (isEn) "Root Authorization Status" else "Root 授權狀態",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold
+            )
+
             when (rootStatus) {
-                RootStatus.Checking -> { CircularProgressIndicator(); Text("正在檢查 Root 權限…", color = MaterialTheme.colorScheme.onSurfaceVariant) }
-                RootStatus.Granted -> Text("Root 權限已獲取", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
-                RootStatus.Denied -> Text("未取得 Root 權限", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
+                RootStatus.Checking -> {
+                    CircularProgressIndicator()
+                    Text(
+                        text = if (isEn) "Checking Root access…" else "正在檢查 Root 權限…",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                RootStatus.Granted -> {
+                    Text(
+                        text = if (isEn) "Root Access Granted" else "Root 權限已獲取",
+                        style = MaterialTheme.typography.titleLarge,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                RootStatus.Denied -> {
+                    // 🚀 關鍵修正：當被拒絕時，除了顯示文字，下方多出一顆重試按鈕
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = if (isEn) "Root Access Denied" else "未取得 Root 權限",
+                            style = MaterialTheme.typography.titleLarge,
+                            color = MaterialTheme.colorScheme.error,
+                            fontWeight = FontWeight.Bold
+                        )
+
+                        Spacer(modifier = Modifier.height(4.dp))
+
+                        ElevatedButton(
+                            onClick = onRetryClick,
+                            colors = ButtonDefaults.elevatedButtonColors(
+                                containerColor = MaterialTheme.colorScheme.errorContainer,
+                                contentColor = MaterialTheme.colorScheme.onErrorContainer
+                            )
+                        ) {
+                            Text(
+                                text = if (isEn) "Retry Granting Root" else "重新嘗試獲取 Root 權限",
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
             }
         }
     }
@@ -301,32 +339,39 @@ private fun FileSelectionCard(files: List<ConfigFile>, isProcessing: Boolean, er
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
     ) {
         Column(modifier = Modifier.fillMaxWidth().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("基帶配置檔案", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+
+            Text(stringResource(id = R.string.card_title_baseband), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+
             if (isProcessing) {
                 CircularProgressIndicator(modifier = Modifier.size(36.dp))
-                Text("正在匯入檔案...", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("Importing files...", color = MaterialTheme.colorScheme.onSurfaceVariant)
             } else if (files.isNotEmpty()) {
-                Text("✅ ${files.size} 個檔案已就緒", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                Text(text = "✅ ${files.size} files ready", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
                 Box(modifier = Modifier.heightIn(max = 120.dp).fillMaxWidth()) {
                     LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         items(files) { file -> Text("• ${file.name} (${file.sizeKb} KB)", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                     }
                 }
-            } else { Text("尚未選擇任何 .binarypb 檔案", color = MaterialTheme.colorScheme.error) }
+            } else {
+                Text(stringResource(id = R.string.msg_no_file_selected), color = MaterialTheme.colorScheme.error)
+            }
+
             if (!errorMessage.isNullOrEmpty()) { Text(text = errorMessage, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
             Spacer(modifier = Modifier.height(8.dp))
-            Button(onClick = onSelectClick, enabled = !isProcessing) { Text(if (files.isNotEmpty()) "重新選擇多個檔案" else "選擇多個檔案") }
+            Button(onClick = onSelectClick, enabled = !isProcessing) { Text(if (files.isNotEmpty()) stringResource(id = R.string.btn_reselect_files) else stringResource(id = R.string.btn_select_files)) }
         }
     }
 }
 
-suspend fun copyMultipleFiles(context: Context, uris: List<Uri>): Pair<List<ConfigFile>, String> = withContext(Dispatchers.IO) {
+suspend fun copyMultipleFiles(context: Context, uris: List<Uri>, isEn: Boolean): Pair<List<ConfigFile>, String> = withContext(Dispatchers.IO) {
     val results = mutableListOf<ConfigFile>()
     val filesDir = context.filesDir
     val errorLogs = java.lang.StringBuilder()
 
     try { com.topjohnwu.superuser.Shell.cmd("rm -f ${filesDir.absolutePath}/*.binarypb").exec() }
-    catch (e: Exception) { errorLogs.append("清理舊檔案失敗: ${e.message}\n") }
+    catch (e: Exception) {
+        errorLogs.append(if (isEn) "Failed to clean old files: " else "清理舊檔案失敗: ").append("${e.message}\n")
+    }
 
     for (uri in uris) {
         try {
@@ -345,47 +390,64 @@ suspend fun copyMultipleFiles(context: Context, uris: List<Uri>): Pair<List<Conf
             val inputStream = context.contentResolver.openInputStream(uri)
 
             if (inputStream == null) {
-                errorLogs.append("[$displayName] 無法開啟 InputStream\n")
+                errorLogs.append(if (isEn) "[$displayName] Cannot open InputStream\n" else "[$displayName] 無法開啟 InputStream\n")
                 continue
             }
 
             inputStream.use { input ->
                 FileOutputStream(targetFile).use { output ->
                     input.copyTo(output)
-                    // 🧙‍♂️ 保持純淨：這裡不再塞入會破壞結構與導致 MDS 閃退的版本號魔法
                 }
             }
 
             if (targetFile.exists() && targetFile.length() > 0) {
                 results.add(ConfigFile(displayName, targetFile.length() / 1024))
             } else {
-                errorLogs.append("[$displayName] 檔案寫入異常\n")
+                errorLogs.append(if (isEn) "[$displayName] File write anomaly\n" else "[$displayName] 檔案寫入異常\n")
             }
 
         } catch (e: Exception) {
-            errorLogs.append("處理發生例外錯誤: ${e.message}\n")
+            errorLogs.append(if (isEn) "Exception occurred during processing: " else "處理發生例外錯誤: ").append("${e.message}\n")
         }
     }
     return@withContext Pair(results, errorLogs.toString())
 }
 
-// 套用配置核心腳本：包含直觀檔案回顯面板
+// 1. 套用配置核心腳本（雙重保險卸載 + 防斷訊 pkill）
 suspend fun applyModemConfig(context: Context): Pair<Boolean, String> = withContext(Dispatchers.IO) {
     val privateDir = context.filesDir.absolutePath
     val d = "$"
 
     val script = """
         echo "================================================="
-        echo "          ✨ 載入基帶自訂配置清單 ✨          "
+        echo "          ✨ Loading Custom UECAP Configs ✨      "
         echo "================================================="
         
         OTA_DIR="/data/vendor/radio/ota_uecap"
         VENDOR_DIR="/vendor/firmware/uecapconfig"
         
         mkdir -p "${d}OTA_DIR"
+        
+        # 🔥 終極殺招：寫入獨立腳本並丟入 PID 1 執行，徹底避開 Android 缺少指令的問題
+        echo "[INFO] Cleaning previous active mounts in PID 1..."
+        cat << 'EOF' > /data/local/tmp/unmount_uecap.sh
+        #!/system/bin/sh
+        # 1. 掃描核心掛載表
+        for m in ${d}(grep "uecapconfig" /proc/mounts | awk '{print ${d}2}'); do
+            umount -l "${d}m" 2>/dev/null
+        done
+        # 2. 盲目暴力卸載（雙重保險）
+        for f in /vendor/firmware/uecapconfig/*.binarypb; do
+            umount -l "${d}f" 2>/dev/null
+        done
+        EOF
+        chmod 755 /data/local/tmp/unmount_uecap.sh
+        nsenter -t 1 -m -- /data/local/tmp/unmount_uecap.sh
+        rm -f /data/local/tmp/unmount_uecap.sh
+        
         rm -rf "${d}OTA_DIR"/* 2>/dev/null
 
-        # 🛠️ 修正點：在掛載時直接打印正在處理的自訂檔名，保證新手一定看得到
+        # 開始重新搬移與全域綁定掛載
         for FILE in "$privateDir"/*.binarypb; do
             if [ -f "${d}FILE" ]; then
                 FILENAME=${d}(basename "${d}FILE")
@@ -397,110 +459,123 @@ suspend fun applyModemConfig(context: Context): Pair<Boolean, String> = withCont
                 chmod 644 "${d}TARGET_OTA"
                 
                 if [ -f "${d}TARGET_VENDOR" ]; then
-                    nsenter -t 1 -m -- umount "${d}TARGET_VENDOR" 2>/dev/null
                     nsenter -t 1 -m -- mount -o bind "${d}TARGET_OTA" "${d}TARGET_VENDOR"
                     if [ ${d}? -eq 0 ]; then
-                        echo "  [掛載成功] 👉 ${d}FILENAME"
+                        echo "  [SUCCESS] 👉 ${d}FILENAME bound globally"
                     else
-                        echo "  [掛載失敗] ❌ ${d}FILENAME"
+                        echo "  [FAILED] ❌ ${d}FILENAME bind failed"
                     fi
                 fi
             fi
         done
 
         echo "-------------------------------------------------"
-        echo "[INFO] 清空舊日誌並安全重啟基帶與 MDS 進程..."
+        echo "[INFO] Syncing Android framework to safe state..."
+        settings put global airplane_mode_on 1
+        am broadcast -a android.intent.action.AIRPLANE_MODE --ez state true >/dev/null 2>&1
+        sleep 2
         logcat -b all -c
         
-        am force-stop com.google.android.ModemDiagnosticSystem 2>/dev/null
+        echo "[INFO] Killing modem processes to clear RAM cache..."
         pkill -9 -f rild 2>/dev/null
         pkill -9 -f shamp 2>/dev/null
         pkill -9 -f vcd 2>/dev/null
         pkill -9 -f modem 2>/dev/null
+        sleep 3
         
-        echo "[INFO] 等待硬體重載設定與數據線路建立 (15秒)..."
-        sleep 15
+        echo "[INFO] Restoring radio state and reviving network..."
+        settings put global airplane_mode_on 0
+        am broadcast -a android.intent.action.AIRPLANE_MODE --ez state false >/dev/null 2>&1
+        
+        echo "[INFO] Waiting for hardware and data lines (12s)..."
+        sleep 12
         
         echo " "
         echo "================================================="
-        echo "=== 🔧 底層 UECAP 原始載入日誌 (供進階除錯) ==="
+        echo "=== 🔧 Raw UECAP Loading Logs (Advanced Debugging) ==="
         echo "================================================="
         logcat -d -b all | grep -i "UECAP" | tail -n 100
         echo "================================================="
-        echo "=== 執行完畢 ==="
+        echo "=== Done ==="
         
     """.trimIndent()
 
-    // ... 前面的 script 保持不變 ...
     val result = com.topjohnwu.superuser.Shell.cmd(script).exec()
-
-    // 🚀 修正：這裡應該是「生成模組」，而不是移除！
     val bootScriptSuccess = ModuleParser.createMagiskModule()
 
     val logOutput = buildString {
         if (result.out.isNotEmpty()) { result.out.forEach { append(it).append("\n") } }
-        if (result.err.isNotEmpty()) { append("\n--- 錯誤訊息 ---\n"); result.err.forEach { append(it).append("\n") } }
-        if (bootScriptSuccess) append("\n👉 Magisk 底層掛載模組已自動生成！\n")
+        if (result.err.isNotEmpty()) { append("\n--- ERROR LOGS ---\n"); result.err.forEach { append(it).append("\n") } }
+        if (bootScriptSuccess) append("\n👉 Magisk boot mount module generated successfully!\n")
     }
     return@withContext Pair(result.isSuccess, logOutput)
 }
 
-// 恢復原廠核心腳本
+// 2. 恢復原廠核心腳本（雙重保險卸載 + 防斷訊 pkill）
 suspend fun resetModemConfig(context: Context): Pair<Boolean, String> = withContext(Dispatchers.IO) {
-    val otaDir = "/data/vendor/radio/ota_uecap"
     val d = "$"
 
     val script = """
         echo "================================================="
-        echo "          ✨ 正在精準解除配置並恢復原廠 ✨       "
+        echo "          ✨ Restoring Factory Baseband ✨       "
         echo "================================================="
         
-        VENDOR_DIR="/vendor/firmware/uecapconfig"
-        
-        # 🛠️ 根據目前 OTA 目錄有的檔案，精準且快速地解除掛載
-        for FILE in "$otaDir"/*.binarypb; do
-            if [ -f "${d}FILE" ]; then
-                FILENAME=${d}(basename "${d}FILE")
-                nsenter -t 1 -m -- umount "${d}VENDOR_DIR/${d}FILENAME" 2>/dev/null
-                echo "  [解除掛載] 🔄 ${d}FILENAME"
-            fi
+        echo "[INFO] Scanning and forcefully unmounting active overrides in PID 1..."
+        # 🔥 終極殺招：寫入獨立腳本並丟入 PID 1 執行
+        cat << 'EOF' > /data/local/tmp/unmount_uecap.sh
+        #!/system/bin/sh
+        for m in ${d}(grep "uecapconfig" /proc/mounts | awk '{print ${d}2}'); do
+            umount -l "${d}m" 2>/dev/null
+            echo "  [UNBOUND GLOBAL] 🔄 ${d}m successfully unmounted"
         done
+        for f in /vendor/firmware/uecapconfig/*.binarypb; do
+            umount -l "${d}f" 2>/dev/null
+        done
+        EOF
+        chmod 755 /data/local/tmp/unmount_uecap.sh
+        nsenter -t 1 -m -- /data/local/tmp/unmount_uecap.sh
+        rm -f /data/local/tmp/unmount_uecap.sh
 
-        echo "[INFO] 清空配置目錄快取..."
-        rm -rf "$otaDir"/* 2>/dev/null
+        echo "[INFO] Cleaning cache directories..."
+        rm -rf /data/vendor/radio/ota_uecap/* 2>/dev/null
         rm -rf /data/vendor/radio/modem_temp_file/* 2>/dev/null
-
-        echo "[INFO] 清空舊日誌並安全重啟基帶與 MDS 進程..."
+        
+        echo "[INFO] Syncing Android framework to safe state..."
+        settings put global airplane_mode_on 1
+        am broadcast -a android.intent.action.AIRPLANE_MODE --ez state true >/dev/null 2>&1
+        sleep 2
         logcat -b all -c
         
-        am force-stop com.google.android.ModemDiagnosticSystem 2>/dev/null
+        echo "[INFO] Killing modem processes to clear RAM cache..."
         pkill -9 -f rild 2>/dev/null
         pkill -9 -f shamp 2>/dev/null
         pkill -9 -f vcd 2>/dev/null
         pkill -9 -f modem 2>/dev/null
+        sleep 3
         
-        echo "[INFO] 等待硬體載入原廠設定 (15秒)..."
-        sleep 15
+        echo "[INFO] Restoring radio state and reviving network..."
+        settings put global airplane_mode_on 0
+        am broadcast -a android.intent.action.AIRPLANE_MODE --ez state false >/dev/null 2>&1
+        
+        echo "[INFO] Waiting for network re-registration (12s)..."
+        sleep 12
         
         echo " "
         echo "================================================="
-        echo "=== 🔧 底層 UECAP 原始載入日誌 (供進階除錯) ==="
+        echo "=== 🔧 Raw UECAP Loading Logs (Advanced Debugging) ==="
         echo "================================================="
         logcat -d -b all | grep -iE "UECAP|shamp" | tail -n 35
         echo "================================================="
-        echo "=== 恢復原廠完畢 ==="
+        echo "=== Factory Reset Complete ==="
     """.trimIndent()
 
-    // ... 前面的 script 保持不變 ...
     val result = com.topjohnwu.superuser.Shell.cmd(script).exec()
-
-    // 🚀 修正：刪除動態生成的模組
     ModuleParser.removeMagiskModule()
 
     val logOutput = buildString {
         if (result.out.isNotEmpty()) { result.out.forEach { append(it).append("\n") } }
-        if (result.err.isNotEmpty()) { append("\n--- 錯誤訊息 ---\n"); result.err.forEach { append(it).append("\n") } }
-        append("\n🗑️ 開機掛載模組已徹底移除。\n")
+        if (result.err.isNotEmpty()) { append("\n--- ERROR LOGS ---\n"); result.err.forEach { append(it).append("\n") } }
+        append("\n🗑️ Magisk boot mount module removed successfully.\n")
     }
     return@withContext Pair(result.isSuccess, logOutput)
 }

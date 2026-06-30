@@ -2,5 +2,14 @@
     <string name="app_name">UECapUpdater</string>
     <string name="tab_single_file">單檔套用模式</string>
     <string name="tab_module_extract">Magisk 模組提取</string>
-    <string name="btn_apply">套用並重載基帶</string>
+    <string name="btn_apply_reload">套用並重載基帶</string>
+    <string name="btn_restore_factory">恢復原廠基帶 (清除配置)</string>
+    <string name="btn_select_files">選擇多個檔案</string>
+    <string name="btn_reselect_files">重新選擇多個檔案</string>
+
+    <string name="card_title_baseband">基帶配置檔案</string>
+    <string name="msg_no_file_selected">尚未選擇任何 .binarypb 檔案</string>
+    <string name="btn_select_modules">選擇多個 Magisk/KernelSU 模組 (.zip)</string>
+    <string name="title_detected_list">偵測到的配置檔案清單：</string>
+    <string name="btn_apply_all_modules">一鍵套用所有匯入的配置</string>
 </resources>

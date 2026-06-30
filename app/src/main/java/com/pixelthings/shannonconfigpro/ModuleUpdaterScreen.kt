@@ -13,6 +13,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -22,25 +23,24 @@ import com.topjohnwu.superuser.Shell
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-
-import androidx.compose.runtime.MutableState // 確保最上方有這個 import
+import androidx.compose.ui.res.stringResource
+import androidx.compose.runtime.MutableState
 
 @Composable
-// 🛠️ 修正：在括號裡接收 MainActivity 傳進來的狀態
 fun ModuleUpdaterScreen(
     detectedFilesState: MutableState<List<PbFileInfo>>,
     logTextState: MutableState<String>
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
-    
-    // 🛠️ 修正：不再用 remember 自己記，而是直接綁定外部傳進來的狀態
+
+    val configuration = LocalConfiguration.current
+    val isEn = configuration.locales[0].toLanguageTag().contains("en", ignoreCase = true)
+
     var detectedFiles by detectedFilesState
     var logText by logTextState
 
     var isApplying by remember { mutableStateOf(false) }
-
-    // 🛠️ 新增：用來控制終端機黑框面板的變數
     var applySuccess by remember { mutableStateOf<Boolean?>(null) }
     var shellLogs by remember { mutableStateOf<String?>(null) }
 
@@ -48,7 +48,7 @@ fun ModuleUpdaterScreen(
         contract = ActivityResultContracts.GetMultipleContents()
     ) { uris: List<Uri> ->
         if (uris.isNotEmpty()) {
-            logText += "正在解析 ${uris.size} 個模組...\n"
+            logText += if (isEn) "Parsing ${uris.size} modules...\n" else "正在解析 ${uris.size} 個模組...\n"
             coroutineScope.launch(Dispatchers.IO) {
                 val allFiles = mutableListOf<PbFileInfo>()
                 for (uri in uris) {
@@ -58,9 +58,9 @@ fun ModuleUpdaterScreen(
                 withContext(Dispatchers.Main) {
                     detectedFiles = allFiles
                     if (allFiles.isEmpty()) {
-                        logText += "❌ 選中的模組中未找到任何 .binarypb 檔案\n"
+                        logText += if (isEn) "❌ No .binarypb files found in selected modules\n" else "❌ 選中的模組中未找到任何 .binarypb 檔案\n"
                     } else {
-                        logText += "✅ 成功匯總！共掃描到 ${allFiles.size} 個配置檔案\n"
+                        logText += if (isEn) "✅ Successfully aggregated ${allFiles.size} config files\n" else "✅ 成功匯總！共掃描到 ${allFiles.size} 個配置檔案\n"
                     }
                 }
             }
@@ -73,18 +73,22 @@ fun ModuleUpdaterScreen(
             modifier = Modifier.fillMaxWidth(),
             enabled = !isApplying
         ) {
-            Text("選擇多個 Magisk/KernelSU 模組 (.zip)")
+            Text(stringResource(id = R.string.btn_select_modules))
         }
 
         Spacer(modifier = Modifier.height(16.dp))
-        Text("偵測到的配置檔案清單：", style = MaterialTheme.typography.titleMedium)
+        Text(stringResource(id = R.string.title_detected_list), style = MaterialTheme.typography.titleMedium)
 
         LazyColumn(modifier = Modifier.weight(1f).fillMaxWidth()) {
             items(detectedFiles) { fileInfo ->
                 Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
                     Column(modifier = Modifier.padding(12.dp)) {
                         Text(text = fileInfo.fileName, style = MaterialTheme.typography.bodyLarge)
-                        Text(text = "來源路徑: ${fileInfo.insidePath}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
+                        Text(
+                            text = "${if (isEn) "Source Path" else "來源路徑"}: ${fileInfo.insidePath}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.secondary
+                        )
                     }
                 }
             }
@@ -92,7 +96,6 @@ fun ModuleUpdaterScreen(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // 🛠️ 新增：帥氣的終端機日誌黑框 (與單檔模式完全相同)
         if (shellLogs != null) {
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -100,7 +103,7 @@ fun ModuleUpdaterScreen(
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text(
-                        text = if (applySuccess == true) "✅ 執行完成" else "❌ 執行異常",
+                        text = if (applySuccess == true) "✅ Execution Complete" else "❌ Execution Failed",
                         color = if (applySuccess == true) Color(0xFF4CAF50) else Color(0xFFF44336),
                         fontWeight = FontWeight.Bold
                     )
@@ -126,13 +129,32 @@ fun ModuleUpdaterScreen(
                 isApplying = true
                 shellLogs = null
                 applySuccess = null
-                logText += "🚀 開始批量套用 ${detectedFiles.size} 個配置檔...\n"
+                logText += if (isEn) "🚀 Batch applying ${detectedFiles.size} configurations...\n" else "🚀 開始批量套用 ${detectedFiles.size} 個配置檔...\n"
 
                 coroutineScope.launch(Dispatchers.IO) {
                     var successCount = 0
                     val aggregatedLogs = StringBuilder()
-                    aggregatedLogs.append("=== 模組配置提取與掛載 ===\n")
+                    aggregatedLogs.append("=== Module Extract & Global Mount ===\n")
 
+                    // 🚀 1. 批量掛載前，利用暫存腳本徹底清空 PID 1 舊的殘留
+                    val d = "$"
+                    val cleanPrevMountsScript = """
+                        cat << 'EOF' > /data/local/tmp/unmount_uecap.sh
+                        #!/system/bin/sh
+                        for m in ${d}(grep "uecapconfig" /proc/mounts | awk '{print ${d}2}'); do
+                            umount -l "${d}m" 2>/dev/null
+                        done
+                        for f in /vendor/firmware/uecapconfig/*.binarypb; do
+                            umount -l "${d}f" 2>/dev/null
+                        done
+                        EOF
+                        chmod 755 /data/local/tmp/unmount_uecap.sh
+                        nsenter -t 1 -m -- /data/local/tmp/unmount_uecap.sh
+                        rm -f /data/local/tmp/unmount_uecap.sh
+                    """.trimIndent()
+                    Shell.cmd(cleanPrevMountsScript).exec()
+
+                    // 2. 依次提取模組內的檔案並掛載
                     for (fileInfo in detectedFiles) {
                         val (success, fileLog) = ModuleParser.applyPbFile(context, fileInfo)
                         aggregatedLogs.append(fileLog)
@@ -140,54 +162,62 @@ fun ModuleUpdaterScreen(
                         withContext(Dispatchers.Main) {
                             if (success) {
                                 successCount++
-                                logText += "✅ [${fileInfo.fileName}] 掛載成功\n"
+                                logText += if (isEn) "✅ [${fileInfo.fileName}] mounted\n" else "✅ [${fileInfo.fileName}] 掛載成功\n"
                             } else {
-                                logText += "❌ [${fileInfo.fileName}] 掛載失敗\n"
+                                logText += if (isEn) "❌ [${fileInfo.fileName}] failed\n" else "❌ [${fileInfo.fileName}] 掛載失敗\n"
                             }
                         }
                     }
 
-                    // 🛠️ 優化版基帶重啟與日誌全面監控腳本
+                    // 🚀 3. 同步升級為官方與防斷訊混合重載腳本
                     val restartScript = """
                         echo "-------------------------------------------------"
-                        echo "[INFO] 清空舊日誌並安全重啟基帶與 MDS 進程..."
+                        echo "[INFO] Syncing Android framework to safe state..."
+                        settings put global airplane_mode_on 1
+                        am broadcast -a android.intent.action.AIRPLANE_MODE --ez state true >/dev/null 2>&1
+                        sleep 2
+                        
+                        echo "[INFO] Clearing logcat buffers..."
                         logcat -b all -c
                         
-                        am force-stop com.google.android.ModemDiagnosticSystem 2>/dev/null
+                        echo "[INFO] Killing modem processes to clear RAM cache..."
                         pkill -9 -f rild 2>/dev/null
                         pkill -9 -f shamp 2>/dev/null
                         pkill -9 -f vcd 2>/dev/null
                         pkill -9 -f modem 2>/dev/null
+                        sleep 3
                         
-                        echo "[INFO] 等待硬體重載設定與數據線路建立 (15秒)..."
-                        sleep 15
+                        echo "[INFO] Restoring radio state and reviving network..."
+                        settings put global airplane_mode_on 0
+                        am broadcast -a android.intent.action.AIRPLANE_MODE --ez state false >/dev/null 2>&1
+                        
+                        echo "[INFO] Waiting for hardware and data lines (12s)..."
+                        sleep 12
                         
                         echo " "
                         echo "================================================="
-                        echo "=== 🔧 底層 UECAP 原始載入日誌 (供進階除錯) ==="
+                        echo "=== 🔧 Raw UECAP Loading Logs (Advanced Debugging) ==="
                         echo "================================================="
-                        # 🛠️ 修正：擴大篩選範圍至 config/Modem，並增加截取至 100 行，確保讀檔日誌被捕獲
                         logcat -d -b all | grep -i "UECAP" | tail -n 100
+                        echo "================================================="
+                        echo "=== Done ==="
                     """.trimIndent()
 
                     val restartResult = Shell.cmd(restartScript).exec()
                     if (restartResult.out.isNotEmpty()) { restartResult.out.forEach { aggregatedLogs.append(it).append("\n") } }
                     if (restartResult.err.isNotEmpty()) { restartResult.err.forEach { aggregatedLogs.append(it).append("\n") } }
 
-                    // ... 前面的 restartResult 保持不變 ...
-
-                    // 🚀 修正：呼叫動態生成 Magisk 模組
                     val bootScriptSuccess = ModuleParser.createMagiskModule()
                     if (bootScriptSuccess) {
-                        aggregatedLogs.append("👉 Magisk 底層掛載模組已自動生成！\n")
+                        aggregatedLogs.append("\n👉 Magisk boot mount module generated successfully!\n")
                     } else {
-                        aggregatedLogs.append("⚠️ Magisk 模組生成失敗，請確認 Root 權限。\n")
+                        aggregatedLogs.append("\n⚠️ Magisk module creation failed. Check root access.\n")
                     }
 
                     withContext(Dispatchers.Main) {
                         shellLogs = aggregatedLogs.toString()
                         applySuccess = (successCount == detectedFiles.size)
-                        logText += "🎉 批量執行完畢！共成功套用 $successCount 個檔案。\n"
+                        logText += if (isEn) "🎉 Batch process done! $successCount files applied.\n" else "🎉 批量執行完畢！共成功套用 $successCount 個檔案。\n"
                         isApplying = false
                     }
                 }
@@ -199,9 +229,9 @@ fun ModuleUpdaterScreen(
             if (isApplying) {
                 CircularProgressIndicator(modifier = Modifier.size(24.dp), color = MaterialTheme.colorScheme.onPrimary)
                 Spacer(modifier = Modifier.width(12.dp))
-                Text("正在寫入並重啟基帶 (約 15 秒)...")
+                Text("Injecting & restarting radio...")
             } else {
-                Text("一鍵套用所有匯入的配置", style = MaterialTheme.typography.titleMedium)
+                Text(stringResource(id = R.string.btn_apply_all_modules), style = MaterialTheme.typography.titleMedium)
             }
         }
     }
