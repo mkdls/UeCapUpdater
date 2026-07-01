@@ -538,7 +538,7 @@ suspend fun copyMultipleFiles(context: Context, uris: List<Uri>, isEn: Boolean):
     return@withContext Pair(results, errorLogs.toString())
 }
 
-// 1. 套用配置核心腳本（官方標準安全轉義版）
+// 1. 套用配置核心腳本（訊號完全恢復監聽版）
 suspend fun applyModemConfig(context: Context): Pair<Boolean, String> = withContext(Dispatchers.IO) {
     val privateDir = context.filesDir.absolutePath
 
@@ -577,8 +577,6 @@ suspend fun applyModemConfig(context: Context): Pair<Boolean, String> = withCont
                 TARGET_VENDOR="${'$'}{VENDOR_DIR}/${'$'}{FILENAME}"
                 
                 cp "${'$'}FILE" "${'$'}TARGET_OTA"
-                
-                # 🚀 偽裝核心：變更擁有者與繼承唯讀安全標籤
                 chown radio:radio "${'$'}TARGET_OTA" 2>/dev/null
                 chcon u:object_r:vendor_file:s0 "${'$'}TARGET_OTA" 2>/dev/null
                 chmod 644 "${'$'}TARGET_OTA"
@@ -605,16 +603,30 @@ suspend fun applyModemConfig(context: Context): Pair<Boolean, String> = withCont
         pkill -9 -f vcd 2>/dev/null
         pkill -9 -f modem 2>/dev/null
         
-        echo "[INFO] Waiting 6s for shamp to parse all configs..."
-        sleep 6
+        # 🚀 修正 1：給基帶一點時間啟動初次處理
+        echo "[INFO] Awaiting initial baseband parser process..."
+        sleep 4
         
-        echo "[INFO] Resyncing Android Telephony framework..."
+        # 🚀 修正 2：在開啟網路數據後，啟動智慧輪詢，直到日誌噴出網路完全復活狀態
+        echo "[INFO] Reviving network and waiting for hardware registration..."
         svc data disable
-        sleep 2
+        sleep 1
         svc data enable
         
-        echo "[INFO] Waiting for framework to register network (6s)..."
-        sleep 6
+        echo "[INFO] Monitoring signal sync and data lines connection status..."
+        COUNTER=0
+        while [ ${'$'}COUNTER -lt 15 ]; do
+            sleep 1
+            # 🔍 終極追蹤特徵：只有當手機真正抓到網路、跟基地台對上線並寫入快取（Flush Registry）時，此行才會在有訊號時大批湧現
+            if logcat -d -b all | grep -i "shamp" | grep -q "Flush Registry to Flash"; then
+                echo "[INFO] Signal lock and registration confirmed! Stopping poll."
+                break
+            fi
+            COUNTER=${'$'}((COUNTER + 1))
+        done
+        
+        # 給日誌緩衝區 1.5 秒做最後的刷寫沉澱
+        sleep 1.5
         
         echo " "
         echo "================================================="
@@ -637,7 +649,7 @@ suspend fun applyModemConfig(context: Context): Pair<Boolean, String> = withCont
     return@withContext Pair(result.isSuccess, logOutput)
 }
 
-// 2. 恢復原廠核心腳本（官方標準安全轉義版）
+// 2. 恢復原廠核心腳本（訊號完全恢復監聽版）
 suspend fun resetModemConfig(context: Context): Pair<Boolean, String> = withContext(Dispatchers.IO) {
     val script = """
         echo "================================================="
@@ -673,16 +685,24 @@ suspend fun resetModemConfig(context: Context): Pair<Boolean, String> = withCont
         pkill -9 -f vcd 2>/dev/null
         pkill -9 -f modem 2>/dev/null
         
-        echo "[INFO] Waiting 6s for hardware back to pure factory state..."
-        sleep 6
+        sleep 4
         
-        echo "[INFO] Resyncing Android Telephony framework..."
+        echo "[INFO] Reviving factory network and waiting for carrier registration..."
         svc data disable
-        sleep 2
+        sleep 1
         svc data enable
         
-        echo "[INFO] Waiting for network re-registration (6s)..."
-        sleep 6
+        COUNTER=0
+        while [ ${'$'}COUNTER -lt 15 ]; do
+            sleep 1
+            if logcat -d -b all | grep -i "shamp" | grep -q "Flush Registry to Flash"; then
+                echo "[INFO] Factory signal lock confirmed! Stopping poll."
+                break
+            fi
+            COUNTER=${'$'}((COUNTER + 1))
+        done
+        
+        sleep 1.5
         
         echo " "
         echo "================================================="
