@@ -1,4 +1,4 @@
-package com.pixelthings.shannonconfigpro.ui.theme
+package com.pixelthings.uecapupdater.ui.theme
 
 import androidx.compose.ui.graphics.Color
 

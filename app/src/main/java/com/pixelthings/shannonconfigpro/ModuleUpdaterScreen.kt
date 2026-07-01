@@ -1,4 +1,4 @@
-package com.pixelthings.shannonconfigpro
+package com.pixelthings.uecapupdater
 
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult

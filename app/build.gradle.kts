@@ -4,7 +4,7 @@ plugins {
 }
 
 android {
-    namespace = "com.pixelthings.shannonconfigpro"
+    namespace = "com.pixelthings.uecapupdater"
     compileSdk {
         version = release(36) {
             minorApiLevel = 1
@@ -71,7 +71,7 @@ dependencies {
 }
 
 android {
-    namespace = "com.pixelthings.shannonconfigpro"
+    namespace = "com.pixelthings.uecapupdater"
     // ... 其他設定保持不變
 
     // 🚀 加入這段，讓系統自動產生語言設定檔

@@ -1,4 +1,4 @@
-package com.pixelthings.shannonconfigpro.ui.theme
+package com.pixelthings.uecapupdater.ui.theme
 
 import android.app.Activity
 import android.os.Build

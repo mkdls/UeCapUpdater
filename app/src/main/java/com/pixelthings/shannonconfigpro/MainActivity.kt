@@ -1,4 +1,4 @@
-package com.pixelthings.shannonconfigpro
+package com.pixelthings.uecapupdater
 
 import android.content.Context
 import android.net.Uri
@@ -10,6 +10,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -31,13 +32,14 @@ import androidx.compose.ui.unit.sp
 import androidx.core.os.LocaleListCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.pixelthings.shannonconfigpro.ui.theme.ShannonConfigProTheme
+import com.pixelthings.uecapupdater.ui.theme.ShannonConfigProTheme
+import com.topjohnwu.superuser.Shell
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
-import com.pixelthings.shannonconfigpro.R
+import com.pixelthings.uecapupdater.R
 
 data class ConfigFile(val name: String, val sizeKb: Long)
 
@@ -127,7 +129,12 @@ fun MainScreen(viewModel: RootStatusViewModel = viewModel()) {
                     ),
                 )
 
-                TabRow(selectedTabIndex = currentTab) {
+                // 🚀 關鍵修改：加入第三個標籤頁
+                ScrollableTabRow(
+                    selectedTabIndex = currentTab,
+                    edgePadding = 8.dp,
+                    containerColor = MaterialTheme.colorScheme.surface
+                ) {
                     Tab(
                         selected = currentTab == 0,
                         onClick = { currentTab = 0 },
@@ -138,121 +145,247 @@ fun MainScreen(viewModel: RootStatusViewModel = viewModel()) {
                         onClick = { currentTab = 1 },
                         text = { Text(stringResource(id = R.string.tab_module_extract), fontWeight = FontWeight.Bold) }
                     )
+                    Tab(
+                        selected = currentTab == 2,
+                        onClick = { currentTab = 2 },
+                        text = { Text(if (isEn) "Terminal" else "終端除錯", fontWeight = FontWeight.Bold) }
+                    )
                 }
             }
         },
     ) { innerPadding ->
-        if (currentTab == 0) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding)
-                    .padding(horizontal = 24.dp, vertical = 16.dp)
-                    .verticalScroll(rememberScrollState()),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                RootStatusCard(rootStatus = rootStatus, isEn = isEn, onRetryClick = { viewModel.checkRootAccess() })
+        when (currentTab) {
+            0 -> {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(innerPadding)
+                        .padding(horizontal = 24.dp, vertical = 16.dp)
+                        .verticalScroll(rememberScrollState()),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    RootStatusCard(rootStatus = rootStatus, isEn = isEn, onRetryClick = { viewModel.checkRootAccess() })
 
-                FileSelectionCard(
-                    files = selectedFiles,
-                    isProcessing = isProcessing,
-                    errorMessage = errorMessage,
-                    onSelectClick = { launcher.launch("*/*") }
-                )
+                    FileSelectionCard(
+                        files = selectedFiles,
+                        isProcessing = isProcessing,
+                        errorMessage = errorMessage,
+                        onSelectClick = { launcher.launch("*/*") }
+                    )
 
-                var applySuccess by remember { mutableStateOf<Boolean?>(null) }
-                var shellLogs by remember { mutableStateOf<String?>(null) }
+                    var applySuccess by remember { mutableStateOf<Boolean?>(null) }
+                    var shellLogs by remember { mutableStateOf<String?>(null) }
 
-                if (shellLogs != null) {
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E))
-                    ) {
-                        Column(modifier = Modifier.padding(16.dp)) {
-                            Text(
-                                text = if (applySuccess == true) "✅ Execution Complete" else "❌ Execution Failed",
-                                color = if (applySuccess == true) Color(0xFF4CAF50) else Color(0xFFF44336),
-                                fontWeight = FontWeight.Bold
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Box(modifier = Modifier.heightIn(max = 250.dp).verticalScroll(rememberScrollState())) {
-                                SelectionContainer {
-                                    Text(
-                                        text = shellLogs!!,
-                                        color = Color(0xFF00FF00),
-                                        fontFamily = FontFamily.Monospace,
-                                        fontSize = 12.sp,
-                                        lineHeight = 16.sp
-                                    )
+                    if (shellLogs != null) {
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E))
+                        ) {
+                            Column(modifier = Modifier.padding(16.dp)) {
+                                Text(
+                                    text = if (applySuccess == true) "✅ Execution Complete" else "❌ Execution Failed",
+                                    color = if (applySuccess == true) Color(0xFF4CAF50) else Color(0xFFF44336),
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Box(modifier = Modifier.heightIn(max = 250.dp).verticalScroll(rememberScrollState())) {
+                                    SelectionContainer {
+                                        Text(
+                                            text = shellLogs!!,
+                                            color = Color(0xFF00FF00),
+                                            fontFamily = FontFamily.Monospace,
+                                            fontSize = 12.sp,
+                                            lineHeight = 16.sp
+                                        )
+                                    }
                                 }
                             }
                         }
                     }
-                }
 
-                Button(
-                    onClick = {
-                        isApplying = true
-                        shellLogs = null
-                        applySuccess = null
-                        coroutineScope.launch {
-                            val (success, log) = applyModemConfig(context)
-                            applySuccess = success
-                            shellLogs = log
-                            isApplying = false
+                    Button(
+                        onClick = {
+                            isApplying = true
+                            shellLogs = null
+                            applySuccess = null
+                            coroutineScope.launch {
+                                val (success, log) = applyModemConfig(context)
+                                applySuccess = success
+                                shellLogs = log
+                                isApplying = false
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth().height(56.dp),
+                        enabled = selectedFiles.isNotEmpty() && !isApplying && !isResetting && rootStatus == RootStatus.Granted,
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                    ) {
+                        if (isApplying) {
+                            CircularProgressIndicator(modifier = Modifier.size(24.dp), color = MaterialTheme.colorScheme.onPrimary)
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Text("Injecting modem parameters...")
+                        } else {
+                            Text(stringResource(id = R.string.btn_apply_reload), style = MaterialTheme.typography.titleMedium)
                         }
-                    },
-                    modifier = Modifier.fillMaxWidth().height(56.dp),
-                    enabled = selectedFiles.isNotEmpty() && !isApplying && !isResetting && rootStatus == RootStatus.Granted,
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
-                ) {
-                    if (isApplying) {
-                        CircularProgressIndicator(modifier = Modifier.size(24.dp), color = MaterialTheme.colorScheme.onPrimary)
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Text("Injecting modem parameters...")
-                    } else {
-                        Text(stringResource(id = R.string.btn_apply_reload), style = MaterialTheme.typography.titleMedium)
                     }
-                }
 
-                OutlinedButton(
-                    onClick = {
-                        isResetting = true
-                        shellLogs = null
-                        applySuccess = null
-                        coroutineScope.launch {
-                            val (success, log) = resetModemConfig(context)
-                            applySuccess = success
-                            shellLogs = log
-                            isResetting = false
+                    OutlinedButton(
+                        onClick = {
+                            isResetting = true
+                            shellLogs = null
+                            applySuccess = null
+                            coroutineScope.launch {
+                                val (success, log) = resetModemConfig(context)
+                                applySuccess = success
+                                shellLogs = log
+                                isResetting = false
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth().height(48.dp),
+                        enabled = !isApplying && !isResetting && rootStatus == RootStatus.Granted,
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                    ) {
+                        if (isResetting) {
+                            CircularProgressIndicator(modifier = Modifier.size(20.dp), color = MaterialTheme.colorScheme.error)
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Text("Unmounting global configs...")
+                        } else {
+                            Text(stringResource(id = R.string.btn_restore_factory))
                         }
-                    },
-                    modifier = Modifier.fillMaxWidth().height(48.dp),
-                    enabled = !isApplying && !isResetting && rootStatus == RootStatus.Granted,
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
-                ) {
-                    if (isResetting) {
-                        CircularProgressIndicator(modifier = Modifier.size(20.dp), color = MaterialTheme.colorScheme.error)
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Text("Unmounting global configs...")
-                    } else {
-                        Text(stringResource(id = R.string.btn_restore_factory))
                     }
+                    Spacer(modifier = Modifier.height(16.dp))
                 }
-                Spacer(modifier = Modifier.height(16.dp))
             }
-        } else {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding)
-            ) {
-                ModuleUpdaterScreen(detectedFilesState, moduleLogTextState)
+            1 -> {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(innerPadding)
+                ) {
+                    ModuleUpdaterScreen(detectedFilesState, moduleLogTextState)
+                }
+            }
+            2 -> {
+                // 🚀 關鍵修改：渲染第三頁終端除錯介面
+                Box(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
+                    DebugConsoleScreen(isEn = isEn, rootStatus = rootStatus)
+                }
             }
         }
     }
 }
+
+// 🚀 全新元件：終端除錯介面
+@Composable
+fun DebugConsoleScreen(isEn: Boolean, rootStatus: RootStatus) {
+    var command by remember { mutableStateOf("") }
+    var outputLog by remember { mutableStateOf(if (isEn) "Waiting for command..." else "等待輸入指令...") }
+    var isExecuting by remember { mutableStateOf(false) }
+    val coroutineScope = rememberCoroutineScope()
+
+    Column(
+        modifier = Modifier.fillMaxSize().padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        // 快捷指令晶片區
+        Row(
+            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            ElevatedFilterChip(
+                selected = false,
+                onClick = { command = "logcat -d -b all | grep -iE 'UECAP|shamp'" },
+                label = { Text("Dump UECAP Logs") }
+            )
+            ElevatedFilterChip(
+                selected = false,
+                onClick = { command = "grep 'uecapconfig' /proc/mounts" },
+                label = { Text("Check Mounts") }
+            )
+            ElevatedFilterChip(
+                selected = false,
+                onClick = { command = "ls -la /vendor/firmware/uecapconfig/" },
+                label = { Text("List Vendor Files") }
+            )
+            ElevatedFilterChip(
+                selected = false,
+                onClick = { command = "logcat -b all -c" },
+                label = { Text("Clear Logcat") }
+            )
+        }
+
+        OutlinedTextField(
+            value = command,
+            onValueChange = { command = it },
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text(if (isEn) "Shell Command (Root)" else "輸入 Shell 指令 (Root)") },
+            singleLine = true,
+            enabled = !isExecuting
+        )
+
+        Button(
+            onClick = {
+                if (command.isBlank()) return@Button
+                isExecuting = true
+                outputLog = if (isEn) "Executing...\n" else "執行中...\n"
+
+                coroutineScope.launch(Dispatchers.IO) {
+                    val result = Shell.cmd(command).exec()
+                    val sb = StringBuilder()
+
+                    if (result.out.isNotEmpty()) {
+                        result.out.forEach { sb.append(it).append("\n") }
+                    }
+                    if (result.err.isNotEmpty()) {
+                        sb.append("\n[STDERR]\n")
+                        result.err.forEach { sb.append(it).append("\n") }
+                    }
+
+                    withContext(Dispatchers.Main) {
+                        outputLog = sb.toString().ifEmpty { if (isEn) "[Process completed with no output]" else "[執行完畢，無輸出內容]" }
+                        isExecuting = false
+                    }
+                }
+            },
+            modifier = Modifier.fillMaxWidth(),
+            enabled = command.isNotBlank() && !isExecuting && rootStatus == RootStatus.Granted,
+            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
+        ) {
+            if (isExecuting) {
+                CircularProgressIndicator(modifier = Modifier.size(20.dp), color = MaterialTheme.colorScheme.onSecondary)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(if (isEn) "Running..." else "執行中...")
+            } else {
+                Text(if (isEn) "Execute Command" else "執行指令")
+            }
+        }
+
+        // 終端機黑框輸出區
+        Card(
+            modifier = Modifier.fillMaxWidth().weight(1f),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF121212))
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(12.dp)
+                    .verticalScroll(rememberScrollState())
+            ) {
+                SelectionContainer {
+                    Text(
+                        text = outputLog,
+                        color = Color(0xFF00FF00),
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 12.sp,
+                        lineHeight = 16.sp
+                    )
+                }
+            }
+        }
+    }
+}
+
+// ---------------- 以下保留原本的元件與腳本邏輯 ----------------
 
 @Composable
 private fun RootStatusCard(rootStatus: RootStatus, isEn: Boolean, onRetryClick: () -> Unit) {
@@ -432,7 +565,6 @@ suspend fun applyModemConfig(context: Context): Pair<Boolean, String> = withCont
         rm -rf "${d}OTA_DIR"/* 2>/dev/null
         rm -rf /data/vendor/radio/modem_temp_file/* 2>/dev/null
 
-        # 開始重新搬移與全域綁定掛載
         for FILE in "$privateDir"/*.binarypb; do
             if [ -f "${d}FILE" ]; then
                 FILENAME=${d}(basename "${d}FILE")
@@ -459,18 +591,15 @@ suspend fun applyModemConfig(context: Context): Pair<Boolean, String> = withCont
         logcat -b all -c
         sleep 1
         
-        # 🚀 1. 趁網路開啟全速載入，暴力強殺基帶，逼迫進行深度冷讀取
         echo "[INFO] Force killing modem daemons (Raw Boot)..."
         pkill -9 -f rild 2>/dev/null
         pkill -9 -f shamp 2>/dev/null
         pkill -9 -f vcd 2>/dev/null
         pkill -9 -f modem 2>/dev/null
         
-        # 🚀 2. 黃金 6 秒空檔：讓基帶無干涉吃飽所有配置
         echo "[INFO] Waiting 6s for shamp to parse all configs..."
         sleep 6
         
-        # 🚀 3. 電信商配置加載完成後，閃斷數據同步 Android 網路狀態機，防鎖死沒訊號
         echo "[INFO] Resyncing Android Telephony framework..."
         svc data disable
         sleep 2
@@ -531,7 +660,6 @@ suspend fun resetModemConfig(context: Context): Pair<Boolean, String> = withCont
         logcat -b all -c
         sleep 1
         
-        # 🚀 同步時間差攻擊流：強殺基帶
         echo "[INFO] Force killing modem daemons (Raw Boot)..."
         pkill -9 -f rild 2>/dev/null
         pkill -9 -f shamp 2>/dev/null
@@ -541,7 +669,6 @@ suspend fun resetModemConfig(context: Context): Pair<Boolean, String> = withCont
         echo "[INFO] Waiting 6s for hardware back to pure factory state..."
         sleep 6
         
-        # 閃斷同步解鎖 UI
         echo "[INFO] Resyncing Android Telephony framework..."
         svc data disable
         sleep 2

@@ -1,4 +1,4 @@
-package com.pixelthings.shannonconfigpro
+package com.pixelthings.uecapupdater
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope

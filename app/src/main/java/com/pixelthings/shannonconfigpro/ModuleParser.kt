@@ -1,4 +1,4 @@
-package com.pixelthings.shannonconfigpro
+package com.pixelthings.uecapupdater
 
 import android.content.Context
 import android.net.Uri
