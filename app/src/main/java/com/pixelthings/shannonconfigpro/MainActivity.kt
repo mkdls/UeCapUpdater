@@ -169,7 +169,7 @@ fun MainScreen(viewModel: RootStatusViewModel = viewModel()) {
                         isProcessing = isProcessing,
                         errorMessage = errorMessage,
                         onSelectClick = { launcher.launch("*/*") },
-                        isEn = isEn // 🚀 傳遞語系狀態，解決 x files ready 翻譯問題
+                        isEn = isEn
                     )
 
                     var applySuccess by remember { mutableStateOf<Boolean?>(null) }
@@ -221,7 +221,6 @@ fun MainScreen(viewModel: RootStatusViewModel = viewModel()) {
                         if (isApplying) {
                             CircularProgressIndicator(modifier = Modifier.size(24.dp), color = MaterialTheme.colorScheme.onPrimary)
                             Spacer(modifier = Modifier.width(12.dp))
-                            // 🚀 翻譯修正
                             Text(if (isEn) "Injecting modem parameters..." else "正在注入基帶參數...")
                         } else {
                             Text(stringResource(id = R.string.btn_apply_reload), style = MaterialTheme.typography.titleMedium)
@@ -247,7 +246,6 @@ fun MainScreen(viewModel: RootStatusViewModel = viewModel()) {
                         if (isResetting) {
                             CircularProgressIndicator(modifier = Modifier.size(20.dp), color = MaterialTheme.colorScheme.error)
                             Spacer(modifier = Modifier.width(12.dp))
-                            // 🚀 翻譯修正
                             Text(if (isEn) "Unmounting global configs..." else "正在卸載全域設定...")
                         } else {
                             Text(stringResource(id = R.string.btn_restore_factory))
@@ -446,7 +444,6 @@ private fun RootStatusCard(rootStatus: RootStatus, isEn: Boolean, onRetryClick: 
     }
 }
 
-// 🚀 加入 isEn 參數以正確切換語系
 @Composable
 private fun FileSelectionCard(files: List<ConfigFile>, isProcessing: Boolean, errorMessage: String?, onSelectClick: () -> Unit, isEn: Boolean) {
     Card(
@@ -460,10 +457,8 @@ private fun FileSelectionCard(files: List<ConfigFile>, isProcessing: Boolean, er
 
             if (isProcessing) {
                 CircularProgressIndicator(modifier = Modifier.size(36.dp))
-                // 🚀 翻譯修正
                 Text(if (isEn) "Importing files..." else "正在匯入檔案...", color = MaterialTheme.colorScheme.onSurfaceVariant)
             } else if (files.isNotEmpty()) {
-                // 🚀 翻譯修正
                 Text(
                     text = if (isEn) "✅ ${files.size} files ready" else "✅ 已準備好 ${files.size} 個檔案",
                     style = MaterialTheme.typography.titleMedium,
@@ -536,7 +531,6 @@ suspend fun copyMultipleFiles(context: Context, uris: List<Uri>, isEn: Boolean):
     return@withContext Pair(results, errorLogs.toString())
 }
 
-// 🚀 核心優化：重構單檔套用邏輯，採用與模組提取相同的「一次性批次處理」策略
 suspend fun applyModemConfig(context: Context): Pair<Boolean, String> = withContext(Dispatchers.IO) {
     val privateDir = context.filesDir.absolutePath
 
@@ -568,7 +562,6 @@ suspend fun applyModemConfig(context: Context): Pair<Boolean, String> = withCont
         rm -rf /data/vendor/radio/modem_temp_file/* 2>/dev/null
 
         echo "[INFO] Processing and staging configurations..."
-        # 第一階段：在當前環境把檔案全部搬好、改好安全標籤
         for FILE in "$privateDir"/*.binarypb; do
             if [ -f "${'$'}FILE" ]; then
                 FILENAME=${'$'}(basename "${'$'}FILE")
@@ -581,7 +574,6 @@ suspend fun applyModemConfig(context: Context): Pair<Boolean, String> = withCont
             fi
         done
         
-        # 🚀 第二階段效能突破：寫入一個統一的掛載腳本，讓 nsenter 一次性批次掛載，免除 IO 阻塞
         cat << 'EOF' > /data/local/tmp/mount_uecap.sh
         #!/system/bin/sh
         for TARGET_OTA in /data/vendor/radio/ota_uecap/*.binarypb; do
@@ -622,19 +614,18 @@ suspend fun applyModemConfig(context: Context): Pair<Boolean, String> = withCont
         sleep 1
         svc data enable
         
-        echo "[INFO] Monitoring native Android telephony state..."
+        echo "[INFO] Monitoring signal sync and data lines connection status..."
         COUNTER=0
-        while [ ${'$'}{'$'}COUNTER -lt 15 ]; do
+        while [ ${'$'}COUNTER -lt 15 ]; do
             sleep 1
-            # 🚀 終極殺招：直接查詢 Android 系統的底層通訊狀態，0 代表 IN_SERVICE (有信號)
+            # 🚀 終極修復：改用 expr 絕對相容加法，直接讀取系統通訊服務狀態
             if dumpsys telephony.registry | grep -qE "mVoiceRegState=0|mDataRegState=0"; then
-                echo "[INFO] Network IN_SERVICE confirmed! Stopping poll."
+                echo "[INFO] Signal lock and registration confirmed! Stopping poll."
                 break
             fi
-            COUNTER=${'$'}{'$'}((COUNTER + 1))
+            COUNTER=${'$'}(expr ${'$'}COUNTER + 1)
         done
         
-        # 多等 1.5 秒讓基帶把最後的日誌吐完
         sleep 1.5
         
         echo " "
@@ -702,14 +693,14 @@ suspend fun resetModemConfig(context: Context): Pair<Boolean, String> = withCont
         
         echo "[INFO] Monitoring native Android telephony state..."
         COUNTER=0
-        while [ ${'$'}{'$'}COUNTER -lt 15 ]; do
+        while [ ${'$'}COUNTER -lt 15 ]; do
             sleep 1
-            # 🚀 查詢是否恢復原廠信號
+            # 🚀 終極修復：改用 expr 安全加法
             if dumpsys telephony.registry | grep -qE "mVoiceRegState=0|mDataRegState=0"; then
                 echo "[INFO] Factory signal lock confirmed! Stopping poll."
                 break
             fi
-            COUNTER=${'$'}{'$'}((COUNTER + 1))
+            COUNTER=${'$'}(expr ${'$'}COUNTER + 1)
         done
         
         sleep 1.5

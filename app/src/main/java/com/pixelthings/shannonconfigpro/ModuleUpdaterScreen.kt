@@ -136,7 +136,6 @@ fun ModuleUpdaterScreen(
                     val aggregatedLogs = StringBuilder()
                     aggregatedLogs.append("=== Module Extract & Global Mount ===\n")
 
-                    val d = "$"
                     val cleanPrevMountsScript = """
                         cat << 'EOF' > /data/local/tmp/unmount_uecap.sh
                         #!/system/bin/sh
@@ -195,11 +194,12 @@ fun ModuleUpdaterScreen(
                         COUNTER=0
                         while [ ${'$'}COUNTER -lt 15 ]; do
                             sleep 1
+                            # 🚀 批量模式同步修正：改用 expr
                             if dumpsys telephony.registry | grep -qE "mVoiceRegState=0|mDataRegState=0"; then
                                 echo "[INFO] Signal lock and registration confirmed! Stopping poll."
                                 break
                             fi
-                            COUNTER=${'$'}((COUNTER + 1))
+                            COUNTER=${'$'}(expr ${'$'}COUNTER + 1)
                         done
                         
                         sleep 1.5
@@ -239,7 +239,6 @@ fun ModuleUpdaterScreen(
             if (isApplying) {
                 CircularProgressIndicator(modifier = Modifier.size(24.dp), color = MaterialTheme.colorScheme.onPrimary)
                 Spacer(modifier = Modifier.width(12.dp))
-                // 🚀 翻譯修正
                 Text(if (isEn) "Injecting & restarting radio..." else "正在注入並重啟射頻...")
             } else {
                 Text(stringResource(id = R.string.btn_apply_all_modules), style = MaterialTheme.typography.titleMedium)
