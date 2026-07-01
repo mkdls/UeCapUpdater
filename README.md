@@ -12,7 +12,7 @@ A reactive, real-time baseband runtime configuration overriding tool tailored fo
 > This tool has been rigorously tested and verified exclusively on the following configuration. Operational stability or compatibility is **NOT guaranteed** on any other devices, older Android revisions, or different patch levels.
 
 * **Device**: Google Pixel 9 Pro Fold
-* **OS Version**: Android 17 (Developer/Beta/Preview Branch)
+* **OS Version**: Android 17
 * **Build Number**: `CP2A.260605.021`
 * **Root Environment**: Magisk `30.7 (30700)`
 
