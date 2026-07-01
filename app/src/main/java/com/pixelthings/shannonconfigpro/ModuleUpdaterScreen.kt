@@ -240,7 +240,8 @@ fun ModuleUpdaterScreen(
             if (isApplying) {
                 CircularProgressIndicator(modifier = Modifier.size(24.dp), color = MaterialTheme.colorScheme.onPrimary)
                 Spacer(modifier = Modifier.width(12.dp))
-                Text("Injecting & restarting radio...")
+                // 🚀 翻譯修正
+                Text(if (isEn) "Injecting & restarting radio..." else "正在注入並重啟射頻...")
             } else {
                 Text(stringResource(id = R.string.btn_apply_all_modules), style = MaterialTheme.typography.titleMedium)
             }

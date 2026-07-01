@@ -39,7 +39,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
-import com.pixelthings.uecapupdater.R
 
 data class ConfigFile(val name: String, val sizeKb: Long)
 
@@ -129,26 +128,24 @@ fun MainScreen(viewModel: RootStatusViewModel = viewModel()) {
                     ),
                 )
 
-                // 🚀 關鍵修改：加入第三個標籤頁
-                ScrollableTabRow(
+                TabRow(
                     selectedTabIndex = currentTab,
-                    edgePadding = 8.dp,
                     containerColor = MaterialTheme.colorScheme.surface
                 ) {
                     Tab(
                         selected = currentTab == 0,
                         onClick = { currentTab = 0 },
-                        text = { Text(stringResource(id = R.string.tab_single_file), fontWeight = FontWeight.Bold) }
+                        text = { Text(stringResource(id = R.string.tab_single_file), fontWeight = FontWeight.Bold, fontSize = 14.sp) }
                     )
                     Tab(
                         selected = currentTab == 1,
                         onClick = { currentTab = 1 },
-                        text = { Text(stringResource(id = R.string.tab_module_extract), fontWeight = FontWeight.Bold) }
+                        text = { Text(stringResource(id = R.string.tab_module_extract), fontWeight = FontWeight.Bold, fontSize = 14.sp) }
                     )
                     Tab(
                         selected = currentTab == 2,
                         onClick = { currentTab = 2 },
-                        text = { Text(if (isEn) "Terminal" else "終端除錯", fontWeight = FontWeight.Bold) }
+                        text = { Text(if (isEn) "Terminal" else "終端除錯", fontWeight = FontWeight.Bold, fontSize = 14.sp) }
                     )
                 }
             }
@@ -171,7 +168,8 @@ fun MainScreen(viewModel: RootStatusViewModel = viewModel()) {
                         files = selectedFiles,
                         isProcessing = isProcessing,
                         errorMessage = errorMessage,
-                        onSelectClick = { launcher.launch("*/*") }
+                        onSelectClick = { launcher.launch("*/*") },
+                        isEn = isEn // 🚀 傳遞語系狀態，解決 x files ready 翻譯問題
                     )
 
                     var applySuccess by remember { mutableStateOf<Boolean?>(null) }
@@ -223,7 +221,8 @@ fun MainScreen(viewModel: RootStatusViewModel = viewModel()) {
                         if (isApplying) {
                             CircularProgressIndicator(modifier = Modifier.size(24.dp), color = MaterialTheme.colorScheme.onPrimary)
                             Spacer(modifier = Modifier.width(12.dp))
-                            Text("Injecting modem parameters...")
+                            // 🚀 翻譯修正
+                            Text(if (isEn) "Injecting modem parameters..." else "正在注入基帶參數...")
                         } else {
                             Text(stringResource(id = R.string.btn_apply_reload), style = MaterialTheme.typography.titleMedium)
                         }
@@ -248,7 +247,8 @@ fun MainScreen(viewModel: RootStatusViewModel = viewModel()) {
                         if (isResetting) {
                             CircularProgressIndicator(modifier = Modifier.size(20.dp), color = MaterialTheme.colorScheme.error)
                             Spacer(modifier = Modifier.width(12.dp))
-                            Text("Unmounting global configs...")
+                            // 🚀 翻譯修正
+                            Text(if (isEn) "Unmounting global configs..." else "正在卸載全域設定...")
                         } else {
                             Text(stringResource(id = R.string.btn_restore_factory))
                         }
@@ -266,7 +266,6 @@ fun MainScreen(viewModel: RootStatusViewModel = viewModel()) {
                 }
             }
             2 -> {
-                // 🚀 關鍵修改：渲染第三頁終端除錯介面
                 Box(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
                     DebugConsoleScreen(isEn = isEn, rootStatus = rootStatus)
                 }
@@ -275,7 +274,6 @@ fun MainScreen(viewModel: RootStatusViewModel = viewModel()) {
     }
 }
 
-// 🚀 全新元件：終端除錯介面
 @Composable
 fun DebugConsoleScreen(isEn: Boolean, rootStatus: RootStatus) {
     var command by remember { mutableStateOf("") }
@@ -287,25 +285,20 @@ fun DebugConsoleScreen(isEn: Boolean, rootStatus: RootStatus) {
         modifier = Modifier.fillMaxSize().padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        // 快捷指令晶片區
-        // 快捷指令晶片區
         Row(
             modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             ElevatedFilterChip(
                 selected = false,
-                // 🚀 重點優化：抓取 UECAP/shamp 後，再用 grep -v 強制剔除含有包名的行數
                 onClick = { command = "logcat -d -b all | grep -iE 'UECAP|shamp' | grep -v 'com.pixelthings.uecapupdater'" },
                 label = { Text("Dump UECAP Logs") }
             )
             ElevatedFilterChip(
                 selected = false,
-                // 🚀 重點優化：檢查掛載時，一樣剔除掉包名的雜訊
                 onClick = { command = "grep 'uecapconfig' /proc/mounts | grep -v 'com.pixelthings.uecapupdater'" },
                 label = { Text("Check Mounts") }
             )
-            // ... 後面保持不變
             ElevatedFilterChip(
                 selected = false,
                 onClick = { command = "ls -la /vendor/firmware/uecapconfig/" },
@@ -364,7 +357,6 @@ fun DebugConsoleScreen(isEn: Boolean, rootStatus: RootStatus) {
             }
         }
 
-        // 終端機黑框輸出區
         Card(
             modifier = Modifier.fillMaxWidth().weight(1f),
             colors = CardDefaults.cardColors(containerColor = Color(0xFF121212))
@@ -388,8 +380,6 @@ fun DebugConsoleScreen(isEn: Boolean, rootStatus: RootStatus) {
         }
     }
 }
-
-// ---------------- 以下保留原本的元件與腳本邏輯 ----------------
 
 @Composable
 private fun RootStatusCard(rootStatus: RootStatus, isEn: Boolean, onRetryClick: () -> Unit) {
@@ -456,8 +446,9 @@ private fun RootStatusCard(rootStatus: RootStatus, isEn: Boolean, onRetryClick: 
     }
 }
 
+// 🚀 加入 isEn 參數以正確切換語系
 @Composable
-private fun FileSelectionCard(files: List<ConfigFile>, isProcessing: Boolean, errorMessage: String?, onSelectClick: () -> Unit) {
+private fun FileSelectionCard(files: List<ConfigFile>, isProcessing: Boolean, errorMessage: String?, onSelectClick: () -> Unit, isEn: Boolean) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
@@ -469,9 +460,16 @@ private fun FileSelectionCard(files: List<ConfigFile>, isProcessing: Boolean, er
 
             if (isProcessing) {
                 CircularProgressIndicator(modifier = Modifier.size(36.dp))
-                Text("Importing files...", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                // 🚀 翻譯修正
+                Text(if (isEn) "Importing files..." else "正在匯入檔案...", color = MaterialTheme.colorScheme.onSurfaceVariant)
             } else if (files.isNotEmpty()) {
-                Text(text = "✅ ${files.size} files ready", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                // 🚀 翻譯修正
+                Text(
+                    text = if (isEn) "✅ ${files.size} files ready" else "✅ 已準備好 ${files.size} 個檔案",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.Bold
+                )
                 Box(modifier = Modifier.heightIn(max = 120.dp).fillMaxWidth()) {
                     LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         items(files) { file -> Text("• ${file.name} (${file.sizeKb} KB)", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
@@ -538,7 +536,7 @@ suspend fun copyMultipleFiles(context: Context, uris: List<Uri>, isEn: Boolean):
     return@withContext Pair(results, errorLogs.toString())
 }
 
-// 1. 套用配置核心腳本（訊號完全恢復監聽版）
+// 🚀 核心優化：重構單檔套用邏輯，採用與模組提取相同的「一次性批次處理」策略
 suspend fun applyModemConfig(context: Context): Pair<Boolean, String> = withContext(Dispatchers.IO) {
     val privateDir = context.filesDir.absolutePath
 
@@ -569,20 +567,29 @@ suspend fun applyModemConfig(context: Context): Pair<Boolean, String> = withCont
         rm -rf "${'$'}{OTA_DIR}"/* 2>/dev/null
         rm -rf /data/vendor/radio/modem_temp_file/* 2>/dev/null
 
-        # 開始重新搬移與全域綁定掛載
+        echo "[INFO] Processing and staging configurations..."
+        # 第一階段：在當前環境把檔案全部搬好、改好安全標籤
         for FILE in "$privateDir"/*.binarypb; do
             if [ -f "${'$'}FILE" ]; then
                 FILENAME=${'$'}(basename "${'$'}FILE")
                 TARGET_OTA="${'$'}{OTA_DIR}/${'$'}{FILENAME}"
-                TARGET_VENDOR="${'$'}{VENDOR_DIR}/${'$'}{FILENAME}"
                 
                 cp "${'$'}FILE" "${'$'}TARGET_OTA"
                 chown radio:radio "${'$'}TARGET_OTA" 2>/dev/null
                 chcon u:object_r:vendor_file:s0 "${'$'}TARGET_OTA" 2>/dev/null
                 chmod 644 "${'$'}TARGET_OTA"
-                
+            fi
+        done
+        
+        # 🚀 第二階段效能突破：寫入一個統一的掛載腳本，讓 nsenter 一次性批次掛載，免除 IO 阻塞
+        cat << 'EOF' > /data/local/tmp/mount_uecap.sh
+        #!/system/bin/sh
+        for TARGET_OTA in /data/vendor/radio/ota_uecap/*.binarypb; do
+            if [ -f "${'$'}TARGET_OTA" ]; then
+                FILENAME=${'$'}(basename "${'$'}TARGET_OTA")
+                TARGET_VENDOR="/vendor/firmware/uecapconfig/${'$'}FILENAME"
                 if [ -f "${'$'}TARGET_VENDOR" ]; then
-                    nsenter -t 1 -m -- mount -o bind "${'$'}TARGET_OTA" "${'$'}TARGET_VENDOR"
+                    mount -o bind "${'$'}TARGET_OTA" "${'$'}TARGET_VENDOR"
                     if [ ${'$'}? -eq 0 ]; then
                         echo "  [SUCCESS] 👉 ${'$'}FILENAME bound globally"
                     else
@@ -591,6 +598,10 @@ suspend fun applyModemConfig(context: Context): Pair<Boolean, String> = withCont
                 fi
             fi
         done
+        EOF
+        chmod 755 /data/local/tmp/mount_uecap.sh
+        nsenter -t 1 -m -- /data/local/tmp/mount_uecap.sh
+        rm -f /data/local/tmp/mount_uecap.sh
 
         echo "-------------------------------------------------"
         echo "[INFO] Resetting Logcat buffer..."
@@ -603,11 +614,9 @@ suspend fun applyModemConfig(context: Context): Pair<Boolean, String> = withCont
         pkill -9 -f vcd 2>/dev/null
         pkill -9 -f modem 2>/dev/null
         
-        # 🚀 修正 1：給基帶一點時間啟動初次處理
         echo "[INFO] Awaiting initial baseband parser process..."
         sleep 4
         
-        # 🚀 修正 2：在開啟網路數據後，啟動智慧輪詢，直到日誌噴出網路完全復活狀態
         echo "[INFO] Reviving network and waiting for hardware registration..."
         svc data disable
         sleep 1
@@ -617,7 +626,6 @@ suspend fun applyModemConfig(context: Context): Pair<Boolean, String> = withCont
         COUNTER=0
         while [ ${'$'}COUNTER -lt 15 ]; do
             sleep 1
-            # 🔍 終極追蹤特徵：只有當手機真正抓到網路、跟基地台對上線並寫入快取（Flush Registry）時，此行才會在有訊號時大批湧現
             if logcat -d -b all | grep -i "shamp" | grep -q "Flush Registry to Flash"; then
                 echo "[INFO] Signal lock and registration confirmed! Stopping poll."
                 break
@@ -625,7 +633,6 @@ suspend fun applyModemConfig(context: Context): Pair<Boolean, String> = withCont
             COUNTER=${'$'}((COUNTER + 1))
         done
         
-        # 給日誌緩衝區 1.5 秒做最後的刷寫沉澱
         sleep 1.5
         
         echo " "
@@ -649,7 +656,6 @@ suspend fun applyModemConfig(context: Context): Pair<Boolean, String> = withCont
     return@withContext Pair(result.isSuccess, logOutput)
 }
 
-// 2. 恢復原廠核心腳本（訊號完全恢復監聽版）
 suspend fun resetModemConfig(context: Context): Pair<Boolean, String> = withContext(Dispatchers.IO) {
     val script = """
         echo "================================================="
