@@ -21,10 +21,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.topjohnwu.superuser.Shell
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.runtime.MutableState
+import kotlinx.coroutines.isActive
 
 @Composable
 fun ModuleUpdaterScreen(
@@ -97,18 +99,23 @@ fun ModuleUpdaterScreen(
         Spacer(modifier = Modifier.height(16.dp))
 
         if (shellLogs != null) {
+            val scrollState = rememberScrollState()
+            LaunchedEffect(shellLogs) {
+                scrollState.scrollTo(scrollState.maxValue)
+            }
+
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E))
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text(
-                        text = if (applySuccess == true) "✅ Execution Complete" else "❌ Execution Failed",
-                        color = if (applySuccess == true) Color(0xFF4CAF50) else Color(0xFFF44336),
+                        text = if (applySuccess == null) "⏳ Running..." else if (applySuccess == true) "✅ Execution Complete" else "❌ Execution Failed",
+                        color = if (applySuccess == null) Color(0xFFFFC107) else if (applySuccess == true) Color(0xFF4CAF50) else Color(0xFFF44336),
                         fontWeight = FontWeight.Bold
                     )
                     Spacer(modifier = Modifier.height(8.dp))
-                    Box(modifier = Modifier.heightIn(max = 200.dp).verticalScroll(rememberScrollState())) {
+                    Box(modifier = Modifier.heightIn(max = 250.dp).verticalScroll(scrollState)) {
                         SelectionContainer {
                             Text(
                                 text = shellLogs!!,
@@ -127,38 +134,57 @@ fun ModuleUpdaterScreen(
         Button(
             onClick = {
                 isApplying = true
-                shellLogs = null
+                shellLogs = "=== Module Extract & Global Mount ===\n"
                 applySuccess = null
                 logText += if (isEn) "🚀 Batch applying ${detectedFiles.size} configurations...\n" else "🚀 開始批量套用 ${detectedFiles.size} 個配置檔...\n"
 
                 coroutineScope.launch(Dispatchers.IO) {
                     var successCount = 0
-                    val aggregatedLogs = StringBuilder()
-                    aggregatedLogs.append("=== Module Extract & Global Mount ===\n")
+                    val publish = { line: String -> coroutineScope.launch(Dispatchers.Main) { shellLogs = (shellLogs ?: "") + line + "\n" } }
 
+                    publish("[INFO] Resetting Logcat buffer...")
+                    Shell.cmd("logcat -b all -c").exec()
+                    delay(1500) // 🚀 關鍵修復 1：給系統足夠時間把舊日誌沖刷乾淨
+
+                    publish("[INFO] Starting real-time Logcat stream daemon...")
+                    // 🚀 批量模式同步升級：安全防閃退日誌監聽流
+                    val logcatProcess = Runtime.getRuntime().exec(arrayOf("su", "-c", "logcat -v time -b all"))
+                    val logcatJob = launch(Dispatchers.IO) {
+                        try {
+                            logcatProcess.inputStream.bufferedReader().use { reader ->
+                                var line: String? = null // ✅ 已補上初始化，免疫報錯
+                                while (coroutineContext.isActive && reader.readLine().also { line = it } != null) {
+                                    val currentLine = line ?: continue
+                                    if ((currentLine.contains("UECAP", true) || currentLine.contains("shamp", true)) &&
+                                        !currentLine.contains("com.pixelthings.uecapupdater")) {
+                                        publish("[Logcat] $currentLine")
+                                        delay(1)
+                                    }
+                                }
+                            }
+                        } catch (e: Exception) {
+                            publish("[INFO] Logcat stream disconnected gracefully.")
+                        }
+                    }
+
+                    publish("[INFO] Requesting Root to scan & unmount active overrides in PID 1...")
+                    publish("[INFO] (This may take up to 5 seconds depending on Root overhead...)")
                     val cleanPrevMountsScript = """
-                        cat << 'EOF' > /data/local/tmp/unmount_uecap.sh
-                        #!/system/bin/sh
-                        for m in ${'建'} (grep "uecapconfig" /proc/mounts | awk '{print ${'$'}2}'); do
+                        for m in ${'$'}(grep "uecapconfig" /proc/mounts | awk '{print ${'$'}2}'); do
                             umount -l "${'$'}m" 2>/dev/null
                         done
                         for f in /vendor/firmware/uecapconfig/*.binarypb; do
                             umount -l "${'$'}f" 2>/dev/null
                         done
-                        EOF
-                        chmod 755 /data/local/tmp/unmount_uecap.sh
-                        nsenter -t 1 -m -- /data/local/tmp/unmount_uecap.sh
-                        rm -f /data/local/tmp/unmount_uecap.sh
-                        
-                        rm -rf /data/vendor/radio/modem_temp_file/* 2>/dev/null
                     """.trimIndent()
-
-                    val finalCleanScript = cleanPrevMountsScript.replace("建", "")
-                    Shell.cmd(finalCleanScript).exec()
+                    Shell.cmd("cat << 'EOF' > /data/local/tmp/unmount_uecap.sh\n$cleanPrevMountsScript\nEOF").exec()
+                    Shell.cmd("chmod 755 /data/local/tmp/unmount_uecap.sh && nsenter -t 1 -m -- /data/local/tmp/unmount_uecap.sh > /dev/null 2>&1 & sleep 1 && rm -f /data/local/tmp/unmount_uecap.sh").exec()
+                    Shell.cmd("rm -rf /data/vendor/radio/modem_temp_file/*").exec()
 
                     for (fileInfo in detectedFiles) {
                         val (success, fileLog) = ModuleParser.applyPbFile(context, fileInfo)
-                        aggregatedLogs.append(fileLog)
+                        // 把解析器的回傳日誌加上 [INFO] 標籤
+                        fileLog.lines().filter { it.isNotBlank() }.forEach { publish("[INFO] $it") }
 
                         withContext(Dispatchers.Main) {
                             if (success) {
@@ -170,62 +196,57 @@ fun ModuleUpdaterScreen(
                         }
                     }
 
-                    val restartScript = """
-                        echo "-------------------------------------------------"
-                        echo "[INFO] Resetting Logcat buffer..."
-                        logcat -b all -c
-                        sleep 1
-                        
-                        echo "[INFO] Force killing modem daemons (Raw Boot)..."
-                        pkill -9 -f rild 2>/dev/null
-                        pkill -9 -f shamp 2>/dev/null
-                        pkill -9 -f vcd 2>/dev/null
-                        pkill -9 -f modem 2>/dev/null
-                        
-                        echo "[INFO] Awaiting initial baseband parser process..."
-                        sleep 4
-                        
-                        echo "[INFO] Reviving network and waiting for hardware registration..."
-                        svc data disable
-                        sleep 1
-                        svc data enable
-                        
-                        echo "[INFO] Monitoring native Android telephony state..."
-                        COUNTER=0
-                        while [ ${'$'}COUNTER -lt 15 ]; do
-                            sleep 1
-                            # 🚀 批量模式同步修正：改用 expr
-                            if dumpsys telephony.registry | grep -qE "mVoiceRegState=0|mDataRegState=0"; then
-                                echo "[INFO] Signal lock and registration confirmed! Stopping poll."
-                                break
-                            fi
-                            COUNTER=${'$'}(expr ${'$'}COUNTER + 1)
-                        done
-                        
-                        sleep 1.5
-                        
-                        echo " "
-                        echo "================================================="
-                        echo "=== 🔧 Complete UECAP/shamp Boot Logs ==="
-                        echo "================================================="
-                        logcat -d -b all | grep -iE "UECAP|shamp" | grep -v "com.pixelthings.uecapupdater"
-                        echo "================================================="
-                        echo "=== Done ==="
-                    """.trimIndent()
+                    publish("-------------------------------------------------")
+                    publish("[INFO] Force killing modem daemons (Raw Boot)...")
+                    Shell.cmd("pkill -9 -f rild; pkill -9 -f shamp; pkill -9 -f vcd; pkill -9 -f modem").exec()
 
-                    val restartResult = Shell.cmd(restartScript).exec()
-                    if (restartResult.out.isNotEmpty()) { restartResult.out.forEach { aggregatedLogs.append(it).append("\n") } }
-                    if (restartResult.err.isNotEmpty()) { restartResult.err.forEach { aggregatedLogs.append(it).append("\n") } }
+                    publish("[INFO] Awaiting initial baseband parser process...")
+                    delay(4000)
+
+                    publish("[INFO] Reviving network and waiting for hardware registration...")
+                    Shell.cmd("svc data disable").exec()
+                    delay(1000)
+                    Shell.cmd("svc data enable").exec()
+
+                    publish("[INFO] Monitoring native Android telephony state...")
+                    var realSignalConfirmed = false
+                    for (counter in 1..20) {
+                        delay(1000)
+                        val check = Shell.cmd("dumpsys telephony.registry").exec()
+                        val hasSystemSignal = check.out.any { it.contains("mVoiceRegState=0") || it.contains("mDataRegState=0") }
+                        val hasShampActive = Shell.cmd("logcat -d -b all | grep -i 'shamp' | grep -qE 'Starting|server' && echo 'YES'").exec().out.contains("YES")
+
+                        if (hasSystemSignal && hasShampActive) {
+                            publish("[INFO] Dual-Layer Signal & Baseband verification passed!")
+                            realSignalConfirmed = true
+                            break
+                        } else {
+                            publish("[INFO] Waiting for hardware & network sync... (${counter}/20s)")
+                        }
+                    }
+
+                    for (i in 6 downTo 1) {
+                        publish("[INFO] Capturing UECAP block streams... ($i s)")
+                        delay(1000)
+                    }
+
+                    // 🚀 關鍵修復 2：信號恢復後，給基帶 5 秒鐘去讀取檔案並將日誌推送到緩衝區
+                    for (i in 5 downTo 1) {
+                        publish("[INFO] Flushing final baseband logs... ($i s)")
+                        delay(1000)
+                    }
+                    publish("=================================================")
+                    publish("=== Done ===")
+
+                    logcatProcess.destroy()
+                    logcatJob.cancel()
 
                     val bootScriptSuccess = ModuleParser.createMagiskModule()
                     if (bootScriptSuccess) {
-                        aggregatedLogs.append("\n👉 Magisk boot mount module generated successfully!\n")
-                    } else {
-                        aggregatedLogs.append("\n⚠️ Magisk module creation failed. Check root access.\n")
+                        publish("[INFO] 👉 Magisk boot mount module generated successfully!")
                     }
 
                     withContext(Dispatchers.Main) {
-                        shellLogs = aggregatedLogs.toString()
                         applySuccess = (successCount == detectedFiles.size)
                         logText += if (isEn) "🎉 Batch process done! $successCount files applied.\n" else "🎉 批量執行完畢！共成功套用 $successCount 個檔案。\n"
                         isApplying = false
@@ -246,6 +267,7 @@ fun ModuleUpdaterScreen(
         }
     }
 }
+
 
 data class PbFileInfo(
     val fileName: String,

@@ -8,7 +8,6 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
@@ -34,15 +33,13 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.pixelthings.uecapupdater.ui.theme.ShannonConfigProTheme
 import com.topjohnwu.superuser.Shell
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
+import kotlinx.coroutines.*
 import java.io.File
 import java.io.FileOutputStream
 
 data class ConfigFile(val name: String, val sizeKb: Long)
 
-class MainActivity : AppCompatActivity() {
+class MainActivity : androidx.activity.ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         setTheme(androidx.appcompat.R.style.Theme_AppCompat_Light_NoActionBar)
         super.onCreate(savedInstanceState)
@@ -90,7 +87,8 @@ fun MainScreen(viewModel: RootStatusViewModel = viewModel()) {
                 val (results, errorDbg) = copyMultipleFiles(context, uris, isEn)
                 selectedFiles = results
                 if (results.isEmpty()) {
-                    errorMessage = if (isEn) "Read failed. Detailed reasons:\n$errorDbg" else "讀取失敗詳細原因：\n$errorDbg"
+                    errorMessage =
+                        if (isEn) "Read failed. Detailed reasons:\n$errorDbg" else "讀取失敗詳細原因：\n$errorDbg"
                 }
                 isProcessing = false
             }
@@ -112,7 +110,9 @@ fun MainScreen(viewModel: RootStatusViewModel = viewModel()) {
                     actions = {
                         TextButton(onClick = {
                             val newLocaleTag = if (isEn) "zh-TW" else "en"
-                            AppCompatDelegate.setApplicationLocales(LocaleListCompat.forLanguageTags(newLocaleTag))
+                            AppCompatDelegate.setApplicationLocales(
+                                LocaleListCompat.forLanguageTags(newLocaleTag)
+                            )
                         }) {
                             Text(
                                 text = if (isEn) "EN" else "中",
@@ -135,17 +135,35 @@ fun MainScreen(viewModel: RootStatusViewModel = viewModel()) {
                     Tab(
                         selected = currentTab == 0,
                         onClick = { currentTab = 0 },
-                        text = { Text(stringResource(id = R.string.tab_single_file), fontWeight = FontWeight.Bold, fontSize = 14.sp) }
+                        text = {
+                            Text(
+                                stringResource(id = R.string.tab_single_file),
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp
+                            )
+                        }
                     )
                     Tab(
                         selected = currentTab == 1,
                         onClick = { currentTab = 1 },
-                        text = { Text(stringResource(id = R.string.tab_module_extract), fontWeight = FontWeight.Bold, fontSize = 14.sp) }
+                        text = {
+                            Text(
+                                stringResource(id = R.string.tab_module_extract),
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp
+                            )
+                        }
                     )
                     Tab(
                         selected = currentTab == 2,
                         onClick = { currentTab = 2 },
-                        text = { Text(if (isEn) "Terminal" else "終端除錯", fontWeight = FontWeight.Bold, fontSize = 14.sp) }
+                        text = {
+                            Text(
+                                if (isEn) "Terminal" else "終端除錯",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp
+                            )
+                        }
                     )
                 }
             }
@@ -162,7 +180,10 @@ fun MainScreen(viewModel: RootStatusViewModel = viewModel()) {
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    RootStatusCard(rootStatus = rootStatus, isEn = isEn, onRetryClick = { viewModel.checkRootAccess() })
+                    RootStatusCard(
+                        rootStatus = rootStatus,
+                        isEn = isEn,
+                        onRetryClick = { viewModel.checkRootAccess() })
 
                     FileSelectionCard(
                         files = selectedFiles,
@@ -176,18 +197,27 @@ fun MainScreen(viewModel: RootStatusViewModel = viewModel()) {
                     var shellLogs by remember { mutableStateOf<String?>(null) }
 
                     if (shellLogs != null) {
+                        val scrollState = rememberScrollState()
+                        LaunchedEffect(shellLogs) {
+                            scrollState.scrollTo(scrollState.maxValue)
+                        }
+
                         Card(
                             modifier = Modifier.fillMaxWidth(),
                             colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E))
                         ) {
                             Column(modifier = Modifier.padding(16.dp)) {
                                 Text(
-                                    text = if (applySuccess == true) "✅ Execution Complete" else "❌ Execution Failed",
-                                    color = if (applySuccess == true) Color(0xFF4CAF50) else Color(0xFFF44336),
+                                    text = if (applySuccess == null) "⏳ Running..." else if (applySuccess == true) "✅ Execution Complete" else "❌ Execution Failed",
+                                    color = if (applySuccess == null) Color(0xFFFFC107) else if (applySuccess == true) Color(0xFF4CAF50) else Color(0xFFF44336),
                                     fontWeight = FontWeight.Bold
                                 )
                                 Spacer(modifier = Modifier.height(8.dp))
-                                Box(modifier = Modifier.heightIn(max = 250.dp).verticalScroll(rememberScrollState())) {
+                                Box(
+                                    modifier = Modifier
+                                        .heightIn(max = 300.dp)
+                                        .verticalScroll(scrollState)
+                                ) {
                                     SelectionContainer {
                                         Text(
                                             text = shellLogs!!,
@@ -205,46 +235,61 @@ fun MainScreen(viewModel: RootStatusViewModel = viewModel()) {
                     Button(
                         onClick = {
                             isApplying = true
-                            shellLogs = null
+                            shellLogs = ""
                             applySuccess = null
                             coroutineScope.launch {
-                                val (success, log) = applyModemConfig(context)
+                                val success = applyModemConfigRealTime(context) { line ->
+                                    shellLogs = (shellLogs ?: "") + line + "\n"
+                                }
                                 applySuccess = success
-                                shellLogs = log
                                 isApplying = false
                             }
                         },
-                        modifier = Modifier.fillMaxWidth().height(56.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(56.dp),
                         enabled = selectedFiles.isNotEmpty() && !isApplying && !isResetting && rootStatus == RootStatus.Granted,
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
                     ) {
                         if (isApplying) {
-                            CircularProgressIndicator(modifier = Modifier.size(24.dp), color = MaterialTheme.colorScheme.onPrimary)
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(24.dp),
+                                color = MaterialTheme.colorScheme.onPrimary
+                            )
                             Spacer(modifier = Modifier.width(12.dp))
                             Text(if (isEn) "Injecting modem parameters..." else "正在注入基帶參數...")
                         } else {
-                            Text(stringResource(id = R.string.btn_apply_reload), style = MaterialTheme.typography.titleMedium)
+                            Text(
+                                stringResource(id = R.string.btn_apply_reload),
+                                style = MaterialTheme.typography.titleMedium
+                            )
                         }
                     }
 
                     OutlinedButton(
                         onClick = {
                             isResetting = true
-                            shellLogs = null
+                            shellLogs = ""
                             applySuccess = null
                             coroutineScope.launch {
-                                val (success, log) = resetModemConfig(context)
+                                val success = resetModemConfigRealTime(context) { line ->
+                                    shellLogs = (shellLogs ?: "") + line + "\n"
+                                }
                                 applySuccess = success
-                                shellLogs = log
                                 isResetting = false
                             }
                         },
-                        modifier = Modifier.fillMaxWidth().height(48.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp),
                         enabled = !isApplying && !isResetting && rootStatus == RootStatus.Granted,
                         colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
                     ) {
                         if (isResetting) {
-                            CircularProgressIndicator(modifier = Modifier.size(20.dp), color = MaterialTheme.colorScheme.error)
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(20.dp),
+                                color = MaterialTheme.colorScheme.error
+                            )
                             Spacer(modifier = Modifier.width(12.dp))
                             Text(if (isEn) "Unmounting global configs..." else "正在卸載全域設定...")
                         } else {
@@ -264,7 +309,9 @@ fun MainScreen(viewModel: RootStatusViewModel = viewModel()) {
                 }
             }
             2 -> {
-                Box(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
+                Box(modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)) {
                     DebugConsoleScreen(isEn = isEn, rootStatus = rootStatus)
                 }
             }
@@ -280,11 +327,15 @@ fun DebugConsoleScreen(isEn: Boolean, rootStatus: RootStatus) {
     val coroutineScope = rememberCoroutineScope()
 
     Column(
-        modifier = Modifier.fillMaxSize().padding(16.dp),
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             ElevatedFilterChip(
@@ -337,7 +388,8 @@ fun DebugConsoleScreen(isEn: Boolean, rootStatus: RootStatus) {
                     }
 
                     withContext(Dispatchers.Main) {
-                        outputLog = sb.toString().ifEmpty { if (isEn) "[Process completed with no output]" else "[執行完畢，無輸出內容]" }
+                        outputLog = sb.toString()
+                            .ifEmpty { if (isEn) "[Process completed with no output]" else "[執行完畢，無輸出內容]" }
                         isExecuting = false
                     }
                 }
@@ -347,7 +399,10 @@ fun DebugConsoleScreen(isEn: Boolean, rootStatus: RootStatus) {
             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
         ) {
             if (isExecuting) {
-                CircularProgressIndicator(modifier = Modifier.size(20.dp), color = MaterialTheme.colorScheme.onSecondary)
+                CircularProgressIndicator(
+                    modifier = Modifier.size(20.dp),
+                    color = MaterialTheme.colorScheme.onSecondary
+                )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(if (isEn) "Running..." else "執行中...")
             } else {
@@ -356,7 +411,9 @@ fun DebugConsoleScreen(isEn: Boolean, rootStatus: RootStatus) {
         }
 
         Card(
-            modifier = Modifier.fillMaxWidth().weight(1f),
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f),
             colors = CardDefaults.cardColors(containerColor = Color(0xFF121212))
         ) {
             Box(
@@ -387,7 +444,9 @@ private fun RootStatusCard(rootStatus: RootStatus, isEn: Boolean, onRetryClick: 
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
     ) {
         Column(
-            modifier = Modifier.fillMaxWidth().padding(24.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
@@ -445,19 +504,38 @@ private fun RootStatusCard(rootStatus: RootStatus, isEn: Boolean, onRetryClick: 
 }
 
 @Composable
-private fun FileSelectionCard(files: List<ConfigFile>, isProcessing: Boolean, errorMessage: String?, onSelectClick: () -> Unit, isEn: Boolean) {
+private fun FileSelectionCard(
+    files: List<ConfigFile>,
+    isProcessing: Boolean,
+    errorMessage: String?,
+    onSelectClick: () -> Unit,
+    isEn: Boolean
+) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
     ) {
-        Column(modifier = Modifier.fillMaxWidth().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
 
-            Text(stringResource(id = R.string.card_title_baseband), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text(
+                stringResource(id = R.string.card_title_baseband),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold
+            )
 
             if (isProcessing) {
                 CircularProgressIndicator(modifier = Modifier.size(36.dp))
-                Text(if (isEn) "Importing files..." else "正在匯入檔案...", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(
+                    if (isEn) "Importing files..." else "正在匯入檔案...",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             } else if (files.isNotEmpty()) {
                 Text(
                     text = if (isEn) "✅ ${files.size} files ready" else "✅ 已準備好 ${files.size} 個檔案",
@@ -465,30 +543,62 @@ private fun FileSelectionCard(files: List<ConfigFile>, isProcessing: Boolean, er
                     color = MaterialTheme.colorScheme.primary,
                     fontWeight = FontWeight.Bold
                 )
-                Box(modifier = Modifier.heightIn(max = 120.dp).fillMaxWidth()) {
+                Box(modifier = Modifier
+                    .heightIn(max = 120.dp)
+                    .fillMaxWidth()) {
                     LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        items(files) { file -> Text("• ${file.name} (${file.sizeKb} KB)", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                        items(files) { file ->
+                            Text(
+                                "• ${file.name} (${file.sizeKb} KB)",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 }
             } else {
-                Text(stringResource(id = R.string.msg_no_file_selected), color = MaterialTheme.colorScheme.error)
+                Text(
+                    stringResource(id = R.string.msg_no_file_selected),
+                    color = MaterialTheme.colorScheme.error
+                )
             }
 
-            if (!errorMessage.isNullOrEmpty()) { Text(text = errorMessage, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+            if (!errorMessage.isNullOrEmpty()) {
+                Text(
+                    text = errorMessage,
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
             Spacer(modifier = Modifier.height(8.dp))
-            Button(onClick = onSelectClick, enabled = !isProcessing) { Text(if (files.isNotEmpty()) stringResource(id = R.string.btn_reselect_files) else stringResource(id = R.string.btn_select_files)) }
+            Button(
+                onClick = onSelectClick,
+                enabled = !isProcessing
+            ) {
+                Text(
+                    if (files.isNotEmpty()) stringResource(id = R.string.btn_reselect_files) else stringResource(
+                        id = R.string.btn_select_files
+                    )
+                )
+            }
         }
     }
 }
 
-suspend fun copyMultipleFiles(context: Context, uris: List<Uri>, isEn: Boolean): Pair<List<ConfigFile>, String> = withContext(Dispatchers.IO) {
+suspend fun copyMultipleFiles(
+    context: Context,
+    uris: List<Uri>,
+    isEn: Boolean
+): Pair<List<ConfigFile>, String> = withContext(Dispatchers.IO) {
     val results = mutableListOf<ConfigFile>()
     val filesDir = context.filesDir
     val errorLogs = java.lang.StringBuilder()
 
-    try { com.topjohnwu.superuser.Shell.cmd("rm -f ${filesDir.absolutePath}/*.binarypb").exec() }
-    catch (e: Exception) {
-        errorLogs.append(if (isEn) "Failed to clean old files: " else "清理舊檔案失敗: ").append("${e.message}\n")
+    try {
+        com.topjohnwu.superuser.Shell.cmd("rm -f ${filesDir.absolutePath}/*.binarypb").exec()
+    } catch (e: Exception) {
+        errorLogs.append(if (isEn) "Failed to clean old files: " else "清理舊檔案失敗: ")
+            .append("${e.message}\n")
     }
 
     for (uri in uris) {
@@ -525,202 +635,254 @@ suspend fun copyMultipleFiles(context: Context, uris: List<Uri>, isEn: Boolean):
             }
 
         } catch (e: Exception) {
-            errorLogs.append(if (isEn) "Exception occurred during processing: " else "處理發生例外錯誤: ").append("${e.message}\n")
+            errorLogs.append(if (isEn) "Exception occurred during processing: " else "處理發生例外錯誤: ")
+                .append("${e.message}\n")
         }
     }
     return@withContext Pair(results, errorLogs.toString())
 }
 
-suspend fun applyModemConfig(context: Context): Pair<Boolean, String> = withContext(Dispatchers.IO) {
-    val privateDir = context.filesDir.absolutePath
+// 🚀 智慧拆解：單檔套用協程流式實時日誌 (混合 Logcat 即時流)
+suspend fun applyModemConfigRealTime(context: Context, onLogLine: (String) -> Unit): Boolean =
+    withContext(Dispatchers.IO) {
+        suspend fun publish(line: String) {
+            withContext(Dispatchers.Main) { onLogLine(line) }
+        }
+        val privateDir = context.filesDir.absolutePath
 
-    val script = """
-        echo "================================================="
-        echo "          ✨ Loading Custom UECAP Configs ✨      "
-        echo "================================================="
-        
-        OTA_DIR="/data/vendor/radio/ota_uecap"
-        VENDOR_DIR="/vendor/firmware/uecapconfig"
-        
-        mkdir -p "${'$'}{OTA_DIR}"
-        
-        echo "[INFO] Cleaning previous active mounts in PID 1..."
-        cat << 'EOF' > /data/local/tmp/unmount_uecap.sh
-        #!/system/bin/sh
-        for m in ${'$'}(grep "uecapconfig" /proc/mounts | awk '{print ${'$'}2}'); do
-            umount -l "${'$'}m" 2>/dev/null
-        done
-        for f in /vendor/firmware/uecapconfig/*.binarypb; do
-            umount -l "${'$'}f" 2>/dev/null
-        done
-        EOF
-        chmod 755 /data/local/tmp/unmount_uecap.sh
-        nsenter -t 1 -m -- /data/local/tmp/unmount_uecap.sh
-        rm -f /data/local/tmp/unmount_uecap.sh
-        
-        rm -rf "${'$'}{OTA_DIR}"/* 2>/dev/null
-        rm -rf /data/vendor/radio/modem_temp_file/* 2>/dev/null
+        publish("=================================================")
+        publish("          ✨ Loading Custom UECAP Configs ✨      ")
+        publish("=================================================")
 
-        echo "[INFO] Processing and staging configurations..."
-        for FILE in "$privateDir"/*.binarypb; do
-            if [ -f "${'$'}FILE" ]; then
-                FILENAME=${'$'}(basename "${'$'}FILE")
-                TARGET_OTA="${'$'}{OTA_DIR}/${'$'}{FILENAME}"
-                
-                cp "${'$'}FILE" "${'$'}TARGET_OTA"
-                chown radio:radio "${'$'}TARGET_OTA" 2>/dev/null
-                chcon u:object_r:vendor_file:s0 "${'$'}TARGET_OTA" 2>/dev/null
-                chmod 644 "${'$'}TARGET_OTA"
-            fi
-        done
-        
-        cat << 'EOF' > /data/local/tmp/mount_uecap.sh
-        #!/system/bin/sh
-        for TARGET_OTA in /data/vendor/radio/ota_uecap/*.binarypb; do
-            if [ -f "${'$'}TARGET_OTA" ]; then
-                FILENAME=${'$'}(basename "${'$'}TARGET_OTA")
-                TARGET_VENDOR="/vendor/firmware/uecapconfig/${'$'}FILENAME"
-                if [ -f "${'$'}TARGET_VENDOR" ]; then
-                    mount -o bind "${'$'}TARGET_OTA" "${'$'}TARGET_VENDOR"
-                    if [ ${'$'}? -eq 0 ]; then
-                        echo "  [SUCCESS] 👉 ${'$'}FILENAME bound globally"
-                    else
-                        echo "  [FAILED] ❌ ${'$'}FILENAME bind failed"
+        publish("[INFO] Resetting Logcat buffer...")
+        Shell.cmd("logcat -b all -c").exec()
+        delay(1500) // 🚀 關鍵修復 1：給系統足夠時間把舊日誌沖刷乾淨
+
+        publish("[INFO] Starting real-time Logcat stream daemon...")
+        val logcatProcess = Runtime.getRuntime().exec(arrayOf("su", "-c", "logcat -v time -b all"))
+        val logcatJob = launch(Dispatchers.IO) {
+            try {
+                logcatProcess.inputStream.bufferedReader().use { reader ->
+                    var line: String? = null
+                    // 使用 while 搭配 yields 確保協程隨時可被安全釋放，且不阻塞線程
+                    while (isActive && reader.readLine().also { line = it } != null) {
+                        val currentLine = line ?: continue
+                        if ((currentLine.contains("UECAP", true) || currentLine.contains("shamp", true)) &&
+                            !currentLine.contains("com.pixelthings.uecapupdater")) {
+                            // 確保 publish 內部安全，若 UI 來不及刷就暫緩 1 毫秒
+                            publish("[Logcat] $currentLine")
+                            delay(1)
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                publish("[INFO] Logcat stream disconnected gracefully.")
+            }
+        }
+
+        publish("[INFO] Requesting Root to scan & unmount active overrides in PID 1...")
+        publish("[INFO] (This may take up to 5 seconds depending on Root overhead...)")
+        val unmountScript = """
+            for m in ${'$'}(grep "uecapconfig" /proc/mounts | awk '{print ${'$'}2}'); do
+                umount -l "${'$'}m" 2>/dev/null
+            done
+            for f in /vendor/firmware/uecapconfig/*.binarypb; do
+                umount -l "${'$'}f" 2>/dev/null
+            done
+        """.trimIndent()
+        Shell.cmd("cat << 'EOF' > /data/local/tmp/unmount_uecap.sh\n$unmountScript\nEOF").exec()
+        Shell.cmd("chmod 755 /data/local/tmp/unmount_uecap.sh && nsenter -t 1 -m -- /data/local/tmp/unmount_uecap.sh > /dev/null 2>&1 & sleep 1 && rm -f /data/local/tmp/unmount_uecap.sh").exec()
+
+        publish("[INFO] Cleaning cache directories...")
+        Shell.cmd("rm -rf /data/vendor/radio/ota_uecap/* /data/vendor/radio/modem_temp_file/*").exec()
+
+        publish("[INFO] Processing and staging configurations...")
+        val pbFiles = File(privateDir).listFiles { _, name -> name.endsWith(".binarypb") } ?: emptyArray()
+        for (file in pbFiles) {
+            val targetOta = "/data/vendor/radio/ota_uecap/${file.name}"
+            Shell.cmd("cp \"${file.absolutePath}\" \"$targetOta\"").exec()
+            Shell.cmd("chown radio:radio \"$targetOta\" && chcon u:object_r:vendor_file:s0 \"$targetOta\" && chmod 644 \"$targetOta\"").exec()
+        }
+
+        publish("[INFO] Executing batch binding mounts...")
+        val mountScript = """
+            #!/system/bin/sh
+            for TARGET_OTA in /data/vendor/radio/ota_uecap/*.binarypb; do
+                if [ -f "${'$'}TARGET_OTA" ]; then
+                    FILENAME=${'$'}(basename "${'$'}TARGET_OTA")
+                    TARGET_VENDOR="/vendor/firmware/uecapconfig/${'$'}FILENAME"
+                    if [ -f "${'$'}TARGET_VENDOR" ]; then
+                        mount -o bind "${'$'}TARGET_OTA" "${'$'}TARGET_VENDOR"
+                        if [ ${'$'}? -eq 0 ]; then
+                            echo "[INFO] 👉 ${'$'}FILENAME bound globally"
+                        else
+                            echo "[INFO] ❌ ${'$'}FILENAME bind failed"
+                        fi
                     fi
                 fi
-            fi
-        done
-        EOF
-        chmod 755 /data/local/tmp/mount_uecap.sh
-        nsenter -t 1 -m -- /data/local/tmp/mount_uecap.sh
-        rm -f /data/local/tmp/mount_uecap.sh
+            done
+        """.trimIndent()
+        Shell.cmd("cat << 'EOF' > /data/local/tmp/mount_uecap.sh\n$mountScript\nEOF").exec()
+        val mountResult = Shell.cmd("chmod 755 /data/local/tmp/mount_uecap.sh && nsenter -t 1 -m -- /data/local/tmp/mount_uecap.sh && rm -f /data/local/tmp/mount_uecap.sh").exec()
+        mountResult.out.forEach { publish(it) }
 
-        echo "-------------------------------------------------"
-        echo "[INFO] Resetting Logcat buffer..."
-        logcat -b all -c
-        sleep 1
-        
-        echo "[INFO] Force killing modem daemons (Raw Boot)..."
-        pkill -9 -f rild 2>/dev/null
-        pkill -9 -f shamp 2>/dev/null
-        pkill -9 -f vcd 2>/dev/null
-        pkill -9 -f modem 2>/dev/null
-        
-        echo "[INFO] Awaiting initial baseband parser process..."
-        sleep 4
-        
-        echo "[INFO] Reviving network and waiting for hardware registration..."
-        svc data disable
-        sleep 1
-        svc data enable
-        
-        echo "[INFO] Monitoring signal sync and data lines connection status..."
-        COUNTER=0
-        while [ ${'$'}COUNTER -lt 15 ]; do
-            sleep 1
-            # 🚀 終極修復：改用 expr 絕對相容加法，直接讀取系統通訊服務狀態
-            if dumpsys telephony.registry | grep -qE "mVoiceRegState=0|mDataRegState=0"; then
-                echo "[INFO] Signal lock and registration confirmed! Stopping poll."
+        publish("-------------------------------------------------")
+        publish("[INFO] Force killing modem daemons (Raw Boot)...")
+        Shell.cmd("pkill -9 -f rild; pkill -9 -f shamp; pkill -9 -f vcd; pkill -9 -f modem").exec()
+
+        publish("[INFO] Awaiting initial baseband parser process...")
+        delay(4000)
+
+        publish("[INFO] Reviving network and waiting for hardware registration...")
+        Shell.cmd("svc data disable").exec()
+        delay(1000)
+        Shell.cmd("svc data enable").exec()
+
+        publish("[INFO] Monitoring native Android telephony state...")
+        var realSignalConfirmed = false
+        for (counter in 1..20) { // 🚀 稍微延長到 20 秒，容錯率更高
+            delay(1000)
+            val check = Shell.cmd("dumpsys telephony.registry").exec()
+            val hasSystemSignal = check.out.any { it.contains("mVoiceRegState=0") || it.contains("mDataRegState=0") }
+
+            // 🚀 雙重保險：除了系統說有訊號，Logcat 緩衝區裡也必須已經出現 shamp 開機初始化的足跡 (避免假性放行)
+            val hasShampActive = Shell.cmd("logcat -d -b all | grep -i 'shamp' | grep -qE 'Starting|server' && echo 'YES'").exec().out.contains("YES")
+
+            if (hasSystemSignal && hasShampActive) {
+                publish("[INFO] Dual-Layer Signal & Baseband verification passed!")
+                realSignalConfirmed = true
                 break
-            fi
-            COUNTER=${'$'}(expr ${'$'}COUNTER + 1)
-        done
-        
-        sleep 1.5
-        
-        echo " "
-        echo "================================================="
-        echo "=== 🔧 Complete UECAP/shamp Boot Logs ==="
-        echo "================================================="
-        logcat -d -b all | grep -iE "UECAP|shamp" | grep -v "com.pixelthings.uecapupdater"
-        echo "================================================="
-        echo "=== Done ==="
-        
-    """.trimIndent()
+            } else {
+                publish("[INFO] Waiting for hardware & network sync... (${counter}/20s)")
+            }
+        }
 
-    val result = com.topjohnwu.superuser.Shell.cmd(script).exec()
-    val bootScriptSuccess = ModuleParser.createMagiskModule()
+        // 🚀 關鍵動態守護：信號確認後，多等 6 秒讓 UECAP 檔案完全讀完
+        // 在這 6 秒內，App 會一邊動態滾動刷新日誌，一邊保證絕對不斷流
+        for (i in 6 downTo 1) {
+            publish("[INFO] Capturing UECAP block streams... ($i s)")
+            delay(1000)
+        }
 
-    val logOutput = buildString {
-        if (result.out.isNotEmpty()) { result.out.forEach { append(it).append("\n") } }
-        if (result.err.isNotEmpty()) { append("\n--- ERROR LOGS ---\n"); result.err.forEach { append(it).append("\n") } }
-        if (bootScriptSuccess) append("\n👉 Magisk boot mount module generated successfully!\n")
+        // 🚀 關鍵修復 2：信號恢復後，給基帶 5 秒鐘去讀取檔案並將日誌推送到緩衝區
+        for (i in 5 downTo 1) {
+            publish("[INFO] Flushing final baseband logs... ($i s)")
+            delay(1000)
+        }
+        publish("=================================================")
+        publish("=== Done ===")
+
+        // 🛑 停止背景 Logcat 監聽
+        logcatProcess.destroy()
+        logcatJob.cancel()
+
+        ModuleParser.createMagiskModule()
+        return@withContext true
     }
-    return@withContext Pair(result.isSuccess, logOutput)
-}
 
-suspend fun resetModemConfig(context: Context): Pair<Boolean, String> = withContext(Dispatchers.IO) {
-    val script = """
-        echo "================================================="
-        echo "          ✨ Restoring Factory Baseband ✨       "
-        echo "================================================="
-        
-        echo "[INFO] Scanning and forcefully unmounting active overrides in PID 1..."
-        cat << 'EOF' > /data/local/tmp/unmount_uecap.sh
-        #!/system/bin/sh
-        for m in ${'$'}(grep "uecapconfig" /proc/mounts | awk '{print ${'$'}2}'); do
-            umount -l "${'$'}m" 2>/dev/null
-            echo "  [UNBOUND GLOBAL] 🔄 ${'$'}m successfully unmounted"
-        done
-        for f in /vendor/firmware/uecapconfig/*.binarypb; do
-            umount -l "${'$'}f" 2>/dev/null
-        done
-        EOF
-        chmod 755 /data/local/tmp/unmount_uecap.sh
-        nsenter -t 1 -m -- /data/local/tmp/unmount_uecap.sh
-        rm -f /data/local/tmp/unmount_uecap.sh
+// 🚀 智慧拆解：恢復原廠協程流式實時日誌 (混合 Logcat 即時流)
+suspend fun resetModemConfigRealTime(context: Context, onLogLine: (String) -> Unit): Boolean =
+    withContext(Dispatchers.IO) {
+        suspend fun publish(line: String) {
+            withContext(Dispatchers.Main) { onLogLine(line) }
+        }
 
-        echo "[INFO] Cleaning cache directories..."
-        rm -rf /data/vendor/radio/ota_uecap/* 2>/dev/null
-        rm -rf /data/vendor/radio/modem_temp_file/* 2>/dev/null
-        
-        echo "[INFO] Resetting Logcat buffer..."
-        logcat -b all -c
-        sleep 1
-        
-        echo "[INFO] Force killing modem daemons (Raw Boot)..."
-        pkill -9 -f rild 2>/dev/null
-        pkill -9 -f shamp 2>/dev/null
-        pkill -9 -f vcd 2>/dev/null
-        pkill -9 -f modem 2>/dev/null
-        
-        sleep 4
-        
-        echo "[INFO] Reviving factory network and waiting for carrier registration..."
-        svc data disable
-        sleep 1
-        svc data enable
-        
-        echo "[INFO] Monitoring native Android telephony state..."
-        COUNTER=0
-        while [ ${'$'}COUNTER -lt 15 ]; do
-            sleep 1
-            # 🚀 終極修復：改用 expr 安全加法
-            if dumpsys telephony.registry | grep -qE "mVoiceRegState=0|mDataRegState=0"; then
-                echo "[INFO] Factory signal lock confirmed! Stopping poll."
+        publish("=================================================")
+        publish("          ✨ Restoring Factory Baseband ✨       ")
+        publish("=================================================")
+
+        publish("[INFO] Resetting Logcat buffer...")
+        Shell.cmd("logcat -b all -c").exec()
+        delay(1500) // 🚀 關鍵修復 1：給系統足夠時間把舊日誌沖刷乾淨
+
+        publish("[INFO] Starting real-time Logcat stream daemon...")
+        val logcatProcess = Runtime.getRuntime().exec(arrayOf("su", "-c", "logcat -v time -b all"))
+        val logcatJob = launch(Dispatchers.IO) {
+            try {
+                logcatProcess.inputStream.bufferedReader().use { reader ->
+                    var line: String? = null
+                    // 使用 while 搭配 yields 確保協程隨時可被安全釋放，且不阻塞線程
+                    while (isActive && reader.readLine().also { line = it } != null) {
+                        val currentLine = line ?: continue
+                        if ((currentLine.contains("UECAP", true) || currentLine.contains("shamp", true)) &&
+                            !currentLine.contains("com.pixelthings.uecapupdater")) {
+                            // 確保 publish 內部安全，若 UI 來不及刷就暫緩 1 毫秒
+                            publish("[Logcat] $currentLine")
+                            delay(1)
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                publish("[INFO] Logcat stream disconnected gracefully.")
+            }
+        }
+
+        publish("[INFO] Requesting Root to scan & unmount active overrides in PID 1...")
+        publish("[INFO] (This may take up to 5 seconds depending on Root overhead...)")
+        val unmountScript = """
+            for m in ${'$'}(grep "uecapconfig" /proc/mounts | awk '{print ${'$'}2}'); do
+                umount -l "${'$'}m" 2>/dev/null
+                echo "[INFO] 🔄 ${'$'}m successfully unmounted"
+            done
+            for f in /vendor/firmware/uecapconfig/*.binarypb; do
+                umount -l "${'$'}f" 2>/dev/null
+            done
+        """.trimIndent()
+        Shell.cmd("cat << 'EOF' > /data/local/tmp/unmount_uecap.sh\n$unmountScript\nEOF").exec()
+        val unmountResult = Shell.cmd("chmod 755 /data/local/tmp/unmount_uecap.sh && nsenter -t 1 -m -- /data/local/tmp/unmount_uecap.sh > /dev/null 2>&1 & sleep 1 && rm -f /data/local/tmp/unmount_uecap.sh").exec()
+        unmountResult.out.forEach { publish(it) }
+
+        publish("[INFO] Cleaning cache directories...")
+        Shell.cmd("rm -rf /data/vendor/radio/ota_uecap/* /data/vendor/radio/modem_temp_file/*").exec()
+
+        publish("[INFO] Force killing modem daemons (Raw Boot)...")
+        Shell.cmd("pkill -9 -f rild; pkill -9 -f shamp; pkill -9 -f vcd; pkill -9 -f modem").exec()
+
+        publish("[INFO] Awaiting hardware fallback to pure factory state...")
+        delay(4000)
+
+        publish("[INFO] Reviving factory network and waiting for carrier registration...")
+        Shell.cmd("svc data disable").exec()
+        delay(1000)
+        Shell.cmd("svc data enable").exec()
+
+        publish("[INFO] Monitoring native Android telephony state...")
+        var realSignalConfirmed = false
+        for (counter in 1..20) { // 🚀 稍微延長到 20 秒，容錯率更高
+            delay(1000)
+            val check = Shell.cmd("dumpsys telephony.registry").exec()
+            val hasSystemSignal = check.out.any { it.contains("mVoiceRegState=0") || it.contains("mDataRegState=0") }
+
+            // 🚀 雙重保險：除了系統說有訊號，Logcat 緩衝區裡也必須已經出現 shamp 開機初始化的足跡 (避免假性放行)
+            val hasShampActive = Shell.cmd("logcat -d -b all | grep -i 'shamp' | grep -qE 'Starting|server' && echo 'YES'").exec().out.contains("YES")
+
+            if (hasSystemSignal && hasShampActive) {
+                publish("[INFO] Dual-Layer Signal & Baseband verification passed!")
+                realSignalConfirmed = true
                 break
-            fi
-            COUNTER=${'$'}(expr ${'$'}COUNTER + 1)
-        done
-        
-        sleep 1.5
-        
-        echo " "
-        echo "================================================="
-        echo "=== 🔧 Complete UECAP/shamp Boot Logs ==="
-        echo "================================================="
-        logcat -d -b all | grep -iE "UECAP|shamp" | grep -v "com.pixelthings.uecapupdater"
-        echo "================================================="
-        echo "=== Factory Reset Complete ==="
-    """.trimIndent()
+            } else {
+                publish("[INFO] Waiting for hardware & network sync... (${counter}/20s)")
+            }
+        }
 
-    val result = com.topjohnwu.superuser.Shell.cmd(script).exec()
-    ModuleParser.removeMagiskModule()
+        // 🚀 關鍵動態守護：信號確認後，多等 6 秒讓 UECAP 檔案完全讀完
+        // 在這 6 秒內，App 會一邊動態滾動刷新日誌，一邊保證絕對不斷流
+        for (i in 6 downTo 1) {
+            publish("[INFO] Capturing UECAP block streams... ($i s)")
+            delay(1000)
+        }
 
-    val logOutput = buildString {
-        if (result.out.isNotEmpty()) { result.out.forEach { append(it).append("\n") } }
-        if (result.err.isNotEmpty()) { append("\n--- ERROR LOGS ---\n"); result.err.forEach { append(it).append("\n") } }
-        append("\n🗑️ Magisk boot mount module removed successfully.\n")
+        // 🚀 關鍵修復 2：信號恢復後，給基帶 5 秒鐘去讀取檔案並將日誌推送到緩衝區
+        for (i in 5 downTo 1) {
+            publish("[INFO] Flushing final baseband logs... ($i s)")
+            delay(1000)
+        }
+        publish("=================================================")
+        publish("=== Factory Reset Complete ===")
+
+        logcatProcess.destroy()
+        logcatJob.cancel()
+
+        ModuleParser.removeMagiskModule()
+        return@withContext true
     }
-    return@withContext Pair(result.isSuccess, logOutput)
-}
