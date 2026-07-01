@@ -538,9 +538,9 @@ suspend fun copyMultipleFiles(context: Context, uris: List<Uri>, isEn: Boolean):
     return@withContext Pair(results, errorLogs.toString())
 }
 
+// 1. 套用配置核心腳本（官方標準安全轉義版）
 suspend fun applyModemConfig(context: Context): Pair<Boolean, String> = withContext(Dispatchers.IO) {
     val privateDir = context.filesDir.absolutePath
-    val d = "$"
 
     val script = """
         echo "================================================="
@@ -550,41 +550,45 @@ suspend fun applyModemConfig(context: Context): Pair<Boolean, String> = withCont
         OTA_DIR="/data/vendor/radio/ota_uecap"
         VENDOR_DIR="/vendor/firmware/uecapconfig"
         
-        mkdir -p "${d}OTA_DIR"
+        mkdir -p "${'$'}{OTA_DIR}"
         
         echo "[INFO] Cleaning previous active mounts in PID 1..."
         cat << 'EOF' > /data/local/tmp/unmount_uecap.sh
         #!/system/bin/sh
-        for m in ${d}(grep "uecapconfig" /proc/mounts | awk '{print ${d}2}'); do
-            umount -l "${d}m" 2>/dev/null
+        for m in ${'$'}(grep "uecapconfig" /proc/mounts | awk '{print ${'$'}2}'); do
+            umount -l "${'$'}m" 2>/dev/null
         done
         for f in /vendor/firmware/uecapconfig/*.binarypb; do
-            umount -l "${d}f" 2>/dev/null
+            umount -l "${'$'}f" 2>/dev/null
         done
         EOF
         chmod 755 /data/local/tmp/unmount_uecap.sh
         nsenter -t 1 -m -- /data/local/tmp/unmount_uecap.sh
         rm -f /data/local/tmp/unmount_uecap.sh
         
-        rm -rf "${d}OTA_DIR"/* 2>/dev/null
+        rm -rf "${'$'}{OTA_DIR}"/* 2>/dev/null
         rm -rf /data/vendor/radio/modem_temp_file/* 2>/dev/null
 
+        # 開始重新搬移與全域綁定掛載
         for FILE in "$privateDir"/*.binarypb; do
-            if [ -f "${d}FILE" ]; then
-                FILENAME=${d}(basename "${d}FILE")
-                TARGET_OTA="${d}OTA_DIR/${d}FILENAME"
-                TARGET_VENDOR="${d}VENDOR_DIR/${d}FILENAME"
+            if [ -f "${'$'}FILE" ]; then
+                FILENAME=${'$'}(basename "${'$'}FILE")
+                TARGET_OTA="${'$'}{OTA_DIR}/${'$'}{FILENAME}"
+                TARGET_VENDOR="${'$'}{VENDOR_DIR}/${'$'}{FILENAME}"
                 
-                cp "${d}FILE" "${d}TARGET_OTA"
-                chcon u:object_r:radio_vendor_data_file:s0 "${d}TARGET_OTA" 2>/dev/null
-                chmod 644 "${d}TARGET_OTA"
+                cp "${'$'}FILE" "${'$'}TARGET_OTA"
                 
-                if [ -f "${d}TARGET_VENDOR" ]; then
-                    nsenter -t 1 -m -- mount -o bind "${d}TARGET_OTA" "${d}TARGET_VENDOR"
-                    if [ ${d}? -eq 0 ]; then
-                        echo "  [SUCCESS] 👉 ${d}FILENAME bound globally"
+                # 🚀 偽裝核心：變更擁有者與繼承唯讀安全標籤
+                chown radio:radio "${'$'}TARGET_OTA" 2>/dev/null
+                chcon u:object_r:vendor_file:s0 "${'$'}TARGET_OTA" 2>/dev/null
+                chmod 644 "${'$'}TARGET_OTA"
+                
+                if [ -f "${'$'}TARGET_VENDOR" ]; then
+                    nsenter -t 1 -m -- mount -o bind "${'$'}TARGET_OTA" "${'$'}TARGET_VENDOR"
+                    if [ ${'$'}? -eq 0 ]; then
+                        echo "  [SUCCESS] 👉 ${'$'}FILENAME bound globally"
                     else
-                        echo "  [FAILED] ❌ ${d}FILENAME bind failed"
+                        echo "  [FAILED] ❌ ${'$'}FILENAME bind failed"
                     fi
                 fi
             fi
@@ -616,7 +620,7 @@ suspend fun applyModemConfig(context: Context): Pair<Boolean, String> = withCont
         echo "================================================="
         echo "=== 🔧 Complete UECAP/shamp Boot Logs ==="
         echo "================================================="
-        logcat -d -b all | grep -iE "UECAP|shamp"
+        logcat -d -b all | grep -iE "UECAP|shamp" | grep -v "com.pixelthings.uecapupdater"
         echo "================================================="
         echo "=== Done ==="
         
@@ -633,9 +637,8 @@ suspend fun applyModemConfig(context: Context): Pair<Boolean, String> = withCont
     return@withContext Pair(result.isSuccess, logOutput)
 }
 
+// 2. 恢復原廠核心腳本（官方標準安全轉義版）
 suspend fun resetModemConfig(context: Context): Pair<Boolean, String> = withContext(Dispatchers.IO) {
-    val d = "$"
-
     val script = """
         echo "================================================="
         echo "          ✨ Restoring Factory Baseband ✨       "
@@ -644,12 +647,12 @@ suspend fun resetModemConfig(context: Context): Pair<Boolean, String> = withCont
         echo "[INFO] Scanning and forcefully unmounting active overrides in PID 1..."
         cat << 'EOF' > /data/local/tmp/unmount_uecap.sh
         #!/system/bin/sh
-        for m in ${d}(grep "uecapconfig" /proc/mounts | awk '{print ${d}2}'); do
-            umount -l "${d}m" 2>/dev/null
-            echo "  [UNBOUND GLOBAL] 🔄 ${d}m successfully unmounted"
+        for m in ${'$'}(grep "uecapconfig" /proc/mounts | awk '{print ${'$'}2}'); do
+            umount -l "${'$'}m" 2>/dev/null
+            echo "  [UNBOUND GLOBAL] 🔄 ${'$'}m successfully unmounted"
         done
         for f in /vendor/firmware/uecapconfig/*.binarypb; do
-            umount -l "${d}f" 2>/dev/null
+            umount -l "${'$'}f" 2>/dev/null
         done
         EOF
         chmod 755 /data/local/tmp/unmount_uecap.sh
@@ -685,7 +688,7 @@ suspend fun resetModemConfig(context: Context): Pair<Boolean, String> = withCont
         echo "================================================="
         echo "=== 🔧 Complete UECAP/shamp Boot Logs ==="
         echo "================================================="
-        logcat -d -b all | grep -iE "UECAP|shamp"
+        logcat -d -b all | grep -iE "UECAP|shamp" | grep -v "com.pixelthings.uecapupdater"
         echo "================================================="
         echo "=== Factory Reset Complete ==="
     """.trimIndent()

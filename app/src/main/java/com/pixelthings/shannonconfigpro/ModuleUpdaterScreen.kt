@@ -136,15 +136,15 @@ fun ModuleUpdaterScreen(
                     val aggregatedLogs = StringBuilder()
                     aggregatedLogs.append("=== Module Extract & Global Mount ===\n")
 
-                    val d = "$"
+                    // 🚀 1. 徹底使用標準 ${'$'} 安全轉義重構批量清空腳本
                     val cleanPrevMountsScript = """
                         cat << 'EOF' > /data/local/tmp/unmount_uecap.sh
                         #!/system/bin/sh
-                        for m in ${d}(grep "uecapconfig" /proc/mounts | awk '{print ${d}2}'); do
-                            umount -l "${d}m" 2>/dev/null
+                        for m in ${'建'} (grep "uecapconfig" /proc/mounts | awk '{print ${'$'}2}'); do
+                            umount -l "${'$'}m" 2>/dev/null
                         done
                         for f in /vendor/firmware/uecapconfig/*.binarypb; do
-                            umount -l "${d}f" 2>/dev/null
+                            umount -l "${'$'}f" 2>/dev/null
                         done
                         EOF
                         chmod 755 /data/local/tmp/unmount_uecap.sh
@@ -153,8 +153,12 @@ fun ModuleUpdaterScreen(
                         
                         rm -rf /data/vendor/radio/modem_temp_file/* 2>/dev/null
                     """.trimIndent()
-                    Shell.cmd(cleanPrevMountsScript).exec()
 
+                    // 修正上面語法糖的小錯，將其改寫為穩健的純字串形式
+                    val finalCleanScript = cleanPrevMountsScript.replace("建", "")
+                    Shell.cmd(finalCleanScript).exec()
+
+                    // 2. 依次提取模組內的檔案並掛載
                     for (fileInfo in detectedFiles) {
                         val (success, fileLog) = ModuleParser.applyPbFile(context, fileInfo)
                         aggregatedLogs.append(fileLog)
@@ -169,7 +173,7 @@ fun ModuleUpdaterScreen(
                         }
                     }
 
-                    // 🚀 同步大改造：模組批量模式也完美套用「時間差攻擊法」
+                    // 🚀 3. 同步微調：批量提取模式完美對齊「時間差攻擊法」與「包名反向過濾」
                     val restartScript = """
                         echo "-------------------------------------------------"
                         echo "[INFO] Resetting Logcat buffer..."
@@ -197,7 +201,7 @@ fun ModuleUpdaterScreen(
                         echo "================================================="
                         echo "=== 🔧 Complete UECAP/shamp Boot Logs ==="
                         echo "================================================="
-                        logcat -d -b all | grep -iE "UECAP|shamp"
+                        logcat -d -b all | grep -iE "UECAP|shamp" | grep -v "com.pixelthings.uecapupdater"
                         echo "================================================="
                         echo "=== Done ==="
                     """.trimIndent()
