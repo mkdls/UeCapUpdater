@@ -288,20 +288,24 @@ fun DebugConsoleScreen(isEn: Boolean, rootStatus: RootStatus) {
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         // 快捷指令晶片區
+        // 快捷指令晶片區
         Row(
             modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             ElevatedFilterChip(
                 selected = false,
-                onClick = { command = "logcat -d -b all | grep -iE 'UECAP|shamp'" },
+                // 🚀 重點優化：抓取 UECAP/shamp 後，再用 grep -v 強制剔除含有包名的行數
+                onClick = { command = "logcat -d -b all | grep -iE 'UECAP|shamp' | grep -v 'com.pixelthings.uecapupdater'" },
                 label = { Text("Dump UECAP Logs") }
             )
             ElevatedFilterChip(
                 selected = false,
-                onClick = { command = "grep 'uecapconfig' /proc/mounts" },
+                // 🚀 重點優化：檢查掛載時，一樣剔除掉包名的雜訊
+                onClick = { command = "grep 'uecapconfig' /proc/mounts | grep -v 'com.pixelthings.uecapupdater'" },
                 label = { Text("Check Mounts") }
             )
+            // ... 後面保持不變
             ElevatedFilterChip(
                 selected = false,
                 onClick = { command = "ls -la /vendor/firmware/uecapconfig/" },
