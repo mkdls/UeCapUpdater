@@ -171,7 +171,6 @@ fun ModuleUpdaterScreen(
                         }
                     }
 
-                    // 🚀 核心大對齊：批量模式完美注入「有訊號 Flush 機制再中斷輪詢」的終極時間差演算法
                     val restartScript = """
                         echo "-------------------------------------------------"
                         echo "[INFO] Resetting Logcat buffer..."
@@ -192,11 +191,11 @@ fun ModuleUpdaterScreen(
                         sleep 1
                         svc data enable
                         
-                        echo "[INFO] Monitoring signal sync and data lines connection status..."
+                        echo "[INFO] Monitoring native Android telephony state..."
                         COUNTER=0
                         while [ ${'$'}COUNTER -lt 15 ]; do
                             sleep 1
-                            if logcat -d -b all | grep -i "shamp" | grep -q "Flush Registry to Flash"; then
+                            if dumpsys telephony.registry | grep -qE "mVoiceRegState=0|mDataRegState=0"; then
                                 echo "[INFO] Signal lock and registration confirmed! Stopping poll."
                                 break
                             fi

@@ -622,17 +622,19 @@ suspend fun applyModemConfig(context: Context): Pair<Boolean, String> = withCont
         sleep 1
         svc data enable
         
-        echo "[INFO] Monitoring signal sync and data lines connection status..."
+        echo "[INFO] Monitoring native Android telephony state..."
         COUNTER=0
-        while [ ${'$'}COUNTER -lt 15 ]; do
+        while [ ${'$'}{'$'}COUNTER -lt 15 ]; do
             sleep 1
-            if logcat -d -b all | grep -i "shamp" | grep -q "Flush Registry to Flash"; then
-                echo "[INFO] Signal lock and registration confirmed! Stopping poll."
+            # 🚀 終極殺招：直接查詢 Android 系統的底層通訊狀態，0 代表 IN_SERVICE (有信號)
+            if dumpsys telephony.registry | grep -qE "mVoiceRegState=0|mDataRegState=0"; then
+                echo "[INFO] Network IN_SERVICE confirmed! Stopping poll."
                 break
             fi
-            COUNTER=${'$'}((COUNTER + 1))
+            COUNTER=${'$'}{'$'}((COUNTER + 1))
         done
         
+        # 多等 1.5 秒讓基帶把最後的日誌吐完
         sleep 1.5
         
         echo " "
@@ -698,14 +700,16 @@ suspend fun resetModemConfig(context: Context): Pair<Boolean, String> = withCont
         sleep 1
         svc data enable
         
+        echo "[INFO] Monitoring native Android telephony state..."
         COUNTER=0
-        while [ ${'$'}COUNTER -lt 15 ]; do
+        while [ ${'$'}{'$'}COUNTER -lt 15 ]; do
             sleep 1
-            if logcat -d -b all | grep -i "shamp" | grep -q "Flush Registry to Flash"; then
+            # 🚀 查詢是否恢復原廠信號
+            if dumpsys telephony.registry | grep -qE "mVoiceRegState=0|mDataRegState=0"; then
                 echo "[INFO] Factory signal lock confirmed! Stopping poll."
                 break
             fi
-            COUNTER=${'$'}((COUNTER + 1))
+            COUNTER=${'$'}{'$'}((COUNTER + 1))
         done
         
         sleep 1.5
