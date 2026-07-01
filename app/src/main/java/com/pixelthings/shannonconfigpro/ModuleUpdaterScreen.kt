@@ -136,7 +136,7 @@ fun ModuleUpdaterScreen(
                     val aggregatedLogs = StringBuilder()
                     aggregatedLogs.append("=== Module Extract & Global Mount ===\n")
 
-                    // 🚀 1. 徹底使用標準 ${'$'} 安全轉義重構批量清空腳本
+                    val d = "$"
                     val cleanPrevMountsScript = """
                         cat << 'EOF' > /data/local/tmp/unmount_uecap.sh
                         #!/system/bin/sh
@@ -154,11 +154,9 @@ fun ModuleUpdaterScreen(
                         rm -rf /data/vendor/radio/modem_temp_file/* 2>/dev/null
                     """.trimIndent()
 
-                    // 修正上面語法糖的小錯，將其改寫為穩健的純字串形式
                     val finalCleanScript = cleanPrevMountsScript.replace("建", "")
                     Shell.cmd(finalCleanScript).exec()
 
-                    // 2. 依次提取模組內的檔案並掛載
                     for (fileInfo in detectedFiles) {
                         val (success, fileLog) = ModuleParser.applyPbFile(context, fileInfo)
                         aggregatedLogs.append(fileLog)
@@ -173,7 +171,7 @@ fun ModuleUpdaterScreen(
                         }
                     }
 
-                    // 🚀 3. 同步微調：批量提取模式完美對齊「時間差攻擊法」與「包名反向過濾」
+                    // 🚀 核心大對齊：批量模式完美注入「有訊號 Flush 機制再中斷輪詢」的終極時間差演算法
                     val restartScript = """
                         echo "-------------------------------------------------"
                         echo "[INFO] Resetting Logcat buffer..."
@@ -186,16 +184,26 @@ fun ModuleUpdaterScreen(
                         pkill -9 -f vcd 2>/dev/null
                         pkill -9 -f modem 2>/dev/null
                         
-                        echo "[INFO] Waiting 6s for shamp to parse all configs..."
-                        sleep 6
+                        echo "[INFO] Awaiting initial baseband parser process..."
+                        sleep 4
                         
-                        echo "[INFO] Resyncing Android Telephony framework..."
+                        echo "[INFO] Reviving network and waiting for hardware registration..."
                         svc data disable
-                        sleep 2
+                        sleep 1
                         svc data enable
                         
-                        echo "[INFO] Waiting for hardware and data lines (6s)..."
-                        sleep 6
+                        echo "[INFO] Monitoring signal sync and data lines connection status..."
+                        COUNTER=0
+                        while [ ${'$'}COUNTER -lt 15 ]; do
+                            sleep 1
+                            if logcat -d -b all | grep -i "shamp" | grep -q "Flush Registry to Flash"; then
+                                echo "[INFO] Signal lock and registration confirmed! Stopping poll."
+                                break
+                            fi
+                            COUNTER=${'$'}((COUNTER + 1))
+                        done
+                        
+                        sleep 1.5
                         
                         echo " "
                         echo "================================================="
