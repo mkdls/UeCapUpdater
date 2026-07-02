@@ -768,36 +768,10 @@ suspend fun applyModemConfigRealTime(context: Context, onLogLine: (String) -> Un
         delay(1000)
         Shell.cmd("svc data enable").exec()
 
-        publish("[INFO] Monitoring native Android telephony state...")
-        var realSignalConfirmed = false
-        for (counter in 1..20) { // 🚀 稍微延長到 20 秒，容錯率更高
-            delay(1000)
-            val check = Shell.cmd("dumpsys telephony.registry").exec()
-            val hasSystemSignal = check.out.any { it.contains("mVoiceRegState=0") || it.contains("mDataRegState=0") }
-
-            // 🚀 雙重保險：除了系統說有訊號，Logcat 緩衝區裡也必須已經出現 shamp 開機初始化的足跡 (避免假性放行)
-            val hasShampActive = Shell.cmd("logcat -d -b all | grep -i 'shamp' | grep -qE 'Starting|server' && echo 'YES'").exec().out.contains("YES")
-
-            if (hasSystemSignal && hasShampActive) {
-                publish("[INFO] Dual-Layer Signal & Baseband verification passed!")
-                realSignalConfirmed = true
-                break
-            } else {
-                publish("[INFO] Waiting for hardware & network sync... (${counter}/20s)")
-            }
-        }
-
-        // 🚀 關鍵動態守護：信號確認後，多等 6 秒讓 UECAP 檔案完全讀完
-        // 在這 6 秒內，App 會一邊動態滾動刷新日誌，一邊保證絕對不斷流
-        for (i in 6 downTo 1) {
-            publish("[INFO] Capturing UECAP block streams... ($i s)")
-            delay(1000)
-        }
-
-        // 🚀 關鍵修復 2：信號恢復後，給基帶 5 秒鐘去讀取檔案並將日誌推送到緩衝區
-        for (i in 5 downTo 1) {
-            publish("[INFO] Flushing final baseband logs... ($i s)")
-            delay(1000)
+        // 🚀 呼叫智慧信號守護進程，不到黃河心不死
+        val isLocked = awaitSignalLock { line -> publish(line) }
+        if (!isLocked) {
+            publish("[ERROR] Baseband might be unstable. Please check Terminal for deep errors.")
         }
         publish("=================================================")
         publish("=== Done ===")
@@ -876,36 +850,10 @@ suspend fun resetModemConfigRealTime(context: Context, onLogLine: (String) -> Un
         delay(1000)
         Shell.cmd("svc data enable").exec()
 
-        publish("[INFO] Monitoring native Android telephony state...")
-        var realSignalConfirmed = false
-        for (counter in 1..20) { // 🚀 稍微延長到 20 秒，容錯率更高
-            delay(1000)
-            val check = Shell.cmd("dumpsys telephony.registry").exec()
-            val hasSystemSignal = check.out.any { it.contains("mVoiceRegState=0") || it.contains("mDataRegState=0") }
-
-            // 🚀 雙重保險：除了系統說有訊號，Logcat 緩衝區裡也必須已經出現 shamp 開機初始化的足跡 (避免假性放行)
-            val hasShampActive = Shell.cmd("logcat -d -b all | grep -i 'shamp' | grep -qE 'Starting|server' && echo 'YES'").exec().out.contains("YES")
-
-            if (hasSystemSignal && hasShampActive) {
-                publish("[INFO] Dual-Layer Signal & Baseband verification passed!")
-                realSignalConfirmed = true
-                break
-            } else {
-                publish("[INFO] Waiting for hardware & network sync... (${counter}/20s)")
-            }
-        }
-
-        // 🚀 關鍵動態守護：信號確認後，多等 6 秒讓 UECAP 檔案完全讀完
-        // 在這 6 秒內，App 會一邊動態滾動刷新日誌，一邊保證絕對不斷流
-        for (i in 6 downTo 1) {
-            publish("[INFO] Capturing UECAP block streams... ($i s)")
-            delay(1000)
-        }
-
-        // 🚀 關鍵修復 2：信號恢復後，給基帶 5 秒鐘去讀取檔案並將日誌推送到緩衝區
-        for (i in 5 downTo 1) {
-            publish("[INFO] Flushing final baseband logs... ($i s)")
-            delay(1000)
+        // 🚀 呼叫智慧信號守護進程，不到黃河心不死
+        val isLocked = awaitSignalLock { line -> publish(line) }
+        if (!isLocked) {
+            publish("[ERROR] Baseband might be unstable. Please check Terminal for deep errors.")
         }
         publish("=================================================")
         publish("=== Factory Reset Complete ===")
@@ -916,3 +864,52 @@ suspend fun resetModemConfigRealTime(context: Context, onLogLine: (String) -> Un
         ModuleParser.removeMagiskModule()
         return@withContext true
     }
+
+// 🚀 核心升級：動態信號鎖定守護進程 (過濾歷史日誌 ＋ 正向計時)
+suspend fun awaitSignalLock(publish: suspend (String) -> Unit): Boolean {
+    publish("[INFO] Monitoring native Android telephony state...")
+    var realSignalConfirmed = false
+    var counter = 0
+    val maxWaitSeconds = 90 // 安全底線
+
+    while (!realSignalConfirmed && counter < maxWaitSeconds) {
+        counter++
+        delay(1000)
+
+        // 1. 查詢系統通訊註冊表，並「切斷」底部的歷史紀錄 (Local logs) 以防讀取到舊的殘留狀態！
+        val rawOutput = Shell.cmd("dumpsys telephony.registry").exec().out
+        val activeStateLines = rawOutput.takeWhile { !it.contains("Local logs", ignoreCase = true) && !it.contains("log:", ignoreCase = true) }
+        val hasSystemSignal = activeStateLines.any { it.contains("mVoiceRegState=0") || it.contains("mDataRegState=0") }
+
+        val isShampAlive = Shell.cmd("pidof shamp").exec().out.isNotEmpty()
+
+        if (counter <= 8) {
+            if (isShampAlive) {
+                publish("[INFO] ⏳ Baseband daemon initialized... Waiting for state flush (Elapsed: ${counter}s)")
+            } else {
+                publish("[INFO] ⏳ Waiting for baseband hardware power-on... (Elapsed: ${counter}s)")
+            }
+        } else {
+            // 8 秒過後，歷史假訊號已被徹底洗淨。此時檢查到的絕對是當前真實連線狀態！
+            if (hasSystemSignal) {
+                publish("[INFO] ✅ Android System Telephony Registry is IN_SERVICE. (Locked at ${counter}s)")
+                realSignalConfirmed = true
+            } else {
+                publish("[INFO] ⏳ Waiting for network registration... (Elapsed: ${counter}s)")
+            }
+        }
+    }
+
+    if (!realSignalConfirmed) {
+        publish("[WARN] ⚠️ Reached 90s safety timeout. The modem might be stuck or searching for network.")
+    } else {
+        // 訊號確定回來後，執行最終日誌打撈 (正向讀秒)
+        publish("[INFO] Capturing final UECAP handshakes & flushing logs...")
+        for (i in 1..5) {
+            publish("[INFO] ⏳ Finalizing baseband streams... (Elapsed: ${i}s / 5s)")
+            delay(1000)
+        }
+    }
+
+    return realSignalConfirmed
+}

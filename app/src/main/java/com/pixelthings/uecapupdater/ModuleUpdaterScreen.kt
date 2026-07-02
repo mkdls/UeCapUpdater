@@ -219,31 +219,10 @@ fun ModuleUpdaterScreen(
                     delay(1000)
                     Shell.cmd("svc data enable").exec()
 
-                    publish("[INFO] Monitoring native Android telephony state...")
-                    var realSignalConfirmed = false
-                    for (counter in 1..20) {
-                        delay(1000)
-                        val check = Shell.cmd("dumpsys telephony.registry").exec()
-                        val hasSystemSignal = check.out.any { it.contains("mVoiceRegState=0") || it.contains("mDataRegState=0") }
-                        val hasShampActive = Shell.cmd("logcat -d -b all | grep -i 'shamp' | grep -qE 'Starting|server' && echo 'YES'").exec().out.contains("YES")
-
-                        if (hasSystemSignal && hasShampActive) {
-                            publish("[INFO] Dual-Layer Signal & Baseband verification passed!")
-                            realSignalConfirmed = true
-                            break
-                        } else {
-                            publish("[INFO] Waiting for hardware & network sync... (${counter}/20s)")
-                        }
-                    }
-
-                    for (i in 6 downTo 1) {
-                        publish("[INFO] Capturing UECAP block streams... ($i s)")
-                        delay(1000)
-                    }
-
-                    for (i in 5 downTo 1) {
-                        publish("[INFO] Flushing final baseband logs... ($i s)")
-                        delay(1000)
+                    // 🚀 呼叫智慧信號守護進程，不到黃河心不死
+                    val isLocked = awaitSignalLock { line -> publish(line) }
+                    if (!isLocked) {
+                        publish("[ERROR] Baseband might be unstable. Please check Terminal for deep errors.")
                     }
                     publish("=================================================")
                     publish("=== Done ===")
