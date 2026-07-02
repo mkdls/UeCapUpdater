@@ -4,6 +4,11 @@ on:
   push:
     branches: [ "main" ] # 如果你的主分支叫 master，請改成 master
 
+    paths-ignore:
+      - '**.md'      # 忽略所有的 Markdown 檔案 (如 README.md, README_zh.md)
+      - 'LICENSE'    # 忽略版權聲明檔案
+      - '.gitignore' # 忽略 git 設定檔
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -41,9 +46,18 @@ jobs:
           tag_name: build-${{ github.run_number }}
           name: UECapUpdater v1.0.${{ github.run_number }}
           body: |
-            ✨ **自動編譯版本發佈**
-            - 版本號：v1.0.${{ github.run_number }}
-            - 支援 Magisk 底層掛載與模組直刷
+            ## 🚀 Automated Release / 自動編譯版本發佈
+            
+            * **Version / 版本號**: `v1.0.${{ github.run_number }}`
+            * **Build Date / 編譯日期**: 2026-07-03
+            
+            ---
+            
+            ### 📝 Update Log / 更新內容 (Commit Message)
+            
+            ```text
+            ${{ github.event.head_commit.message }}
+            ```
           files: UECapUpdater-v1.0.${{ github.run_number }}.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
