@@ -12,7 +12,7 @@
 > 本工具僅在以下特定硬體與系統環境中完成完整測試與驗證，**絕不保證**在其他設備、舊版 Android 或不同安全修補程式版本上的運行效果。
 
 * **設備 (Device)**: Google Pixel 9 Pro Fold
-* **系統版本 (OS Version)**: Android 17 (Developer/Beta/Preview 測試分支)
+* **系統版本 (OS Version)**: Android 17 
 * **修補程式版本 (Build Number)**: `CP2A.260605.021`
 * **Root 框架 (Root Environment)**: Magisk `30.7 (30700)`
 
