@@ -12,9 +12,21 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.platform.LocalContext
 
 private val DarkColorScheme = darkColorScheme(
-    primary = Purple80,
+    primary = androidx.compose.ui.graphics.Color(0xFFA0D0C4), // 保持你的薄荷綠/青色
     secondary = PurpleGrey80,
-    tertiary = Pink80
+    tertiary = Pink80,
+
+    // 🚀 關鍵修復：手動補上 Pixel 系統設定的標誌性墨綠深灰基底（防止在未觸發動態色彩時死黑）
+    background = androidx.compose.ui.graphics.Color(0xFF111413),
+    surface = androidx.compose.ui.graphics.Color(0xFF111413),
+
+    // 容器色
+    surfaceContainer = androidx.compose.ui.graphics.Color(0xFF1A1D1C),
+    surfaceContainerLow = androidx.compose.ui.graphics.Color(0xFF171A19),
+    surfaceContainerHigh = androidx.compose.ui.graphics.Color(0xFF202423),
+
+    onBackground = androidx.compose.ui.graphics.Color(0xFFE1E3E1),
+    onSurface = androidx.compose.ui.graphics.Color(0xFFE1E3E1)
 )
 
 private val LightColorScheme = lightColorScheme(

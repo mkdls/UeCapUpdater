@@ -13,7 +13,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -24,23 +23,22 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import androidx.compose.ui.res.stringResource
 import androidx.compose.runtime.MutableState
 import kotlinx.coroutines.isActive
 
 @Composable
 fun ModuleUpdaterScreen(
     detectedFilesState: MutableState<List<PbFileInfo>>,
-    logTextState: MutableState<String>
+    moduleLogTextState: MutableState<String>,
+    isEn: Boolean // 🚀 完美接軌首頁傳進來的響應式語系變數
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
 
-    val configuration = LocalConfiguration.current
-    val isEn = configuration.locales[0].toLanguageTag().contains("en", ignoreCase = true)
+    // 🚀 關鍵修復 1：刪除了原本在這裡會強行覆蓋狀態的 LocalConfiguration 舊 isEn 定義！
 
     var detectedFiles by detectedFilesState
-    var logText by logTextState
+    var logText by moduleLogTextState // 修正狀態綁定變數名
 
     var isApplying by remember { mutableStateOf(false) }
     var applySuccess by remember { mutableStateOf<Boolean?>(null) }
@@ -75,15 +73,23 @@ fun ModuleUpdaterScreen(
             modifier = Modifier.fillMaxWidth(),
             enabled = !isApplying
         ) {
-            Text(stringResource(id = R.string.btn_select_modules))
+            // 🚀 關鍵修復 2：拔除殘留 stringResource，全面綁定動態語系
+            Text(if (isEn) "Select Magisk/KernelSU Modules (.zip)" else "選擇多個 Magisk/KernelSU 模組 (.zip)")
         }
 
         Spacer(modifier = Modifier.height(16.dp))
-        Text(stringResource(id = R.string.title_detected_list), style = MaterialTheme.typography.titleMedium)
+        Text(
+            text = if (isEn) "Detected Configuration Files" else "偵測到的配置檔案清單",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold
+        )
 
         LazyColumn(modifier = Modifier.weight(1f).fillMaxWidth()) {
             items(detectedFiles) { fileInfo ->
-                Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                Card(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
+                ) {
                     Column(modifier = Modifier.padding(12.dp)) {
                         Text(text = fileInfo.fileName, style = MaterialTheme.typography.bodyLarge)
                         Text(
@@ -106,7 +112,7 @@ fun ModuleUpdaterScreen(
 
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E))
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text(
@@ -115,15 +121,22 @@ fun ModuleUpdaterScreen(
                         fontWeight = FontWeight.Bold
                     )
                     Spacer(modifier = Modifier.height(8.dp))
-                    Box(modifier = Modifier.heightIn(max = 250.dp).verticalScroll(scrollState)) {
-                        SelectionContainer {
-                            Text(
-                                text = shellLogs!!,
-                                color = Color(0xFF00FF00),
-                                fontFamily = FontFamily.Monospace,
-                                fontSize = 12.sp,
-                                lineHeight = 16.sp
-                            )
+
+                    // 🚀 視覺同步：內層控制台也改用 M3 最低容器色，告別死黑
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLowest)
+                    ) {
+                        Box(modifier = Modifier.heightIn(max = 250.dp).verticalScroll(scrollState).padding(8.dp)) {
+                            SelectionContainer {
+                                Text(
+                                    text = shellLogs!!,
+                                    color = Color(0xFF00FF00),
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 12.sp,
+                                    lineHeight = 16.sp
+                                )
+                            }
                         }
                     }
                 }
@@ -144,15 +157,14 @@ fun ModuleUpdaterScreen(
 
                     publish("[INFO] Resetting Logcat buffer...")
                     Shell.cmd("logcat -b all -c").exec()
-                    delay(1500) // 🚀 關鍵修復 1：給系統足夠時間把舊日誌沖刷乾淨
+                    delay(1500)
 
                     publish("[INFO] Starting real-time Logcat stream daemon...")
-                    // 🚀 批量模式同步升級：安全防閃退日誌監聽流
                     val logcatProcess = Runtime.getRuntime().exec(arrayOf("su", "-c", "logcat -v time -b all"))
                     val logcatJob = launch(Dispatchers.IO) {
                         try {
                             logcatProcess.inputStream.bufferedReader().use { reader ->
-                                var line: String? = null // ✅ 已補上初始化，免疫報錯
+                                var line: String? = null
                                 while (coroutineContext.isActive && reader.readLine().also { line = it } != null) {
                                     val currentLine = line ?: continue
                                     if ((currentLine.contains("UECAP", true) || currentLine.contains("shamp", true)) &&
@@ -183,7 +195,6 @@ fun ModuleUpdaterScreen(
 
                     for (fileInfo in detectedFiles) {
                         val (success, fileLog) = ModuleParser.applyPbFile(context, fileInfo)
-                        // 把解析器的回傳日誌加上 [INFO] 標籤
                         fileLog.lines().filter { it.isNotBlank() }.forEach { publish("[INFO] $it") }
 
                         withContext(Dispatchers.Main) {
@@ -230,7 +241,6 @@ fun ModuleUpdaterScreen(
                         delay(1000)
                     }
 
-                    // 🚀 關鍵修復 2：信號恢復後，給基帶 5 秒鐘去讀取檔案並將日誌推送到緩衝區
                     for (i in 5 downTo 1) {
                         publish("[INFO] Flushing final baseband logs... ($i s)")
                         delay(1000)
@@ -262,12 +272,11 @@ fun ModuleUpdaterScreen(
                 Spacer(modifier = Modifier.width(12.dp))
                 Text(if (isEn) "Injecting & restarting radio..." else "正在注入並重啟射頻...")
             } else {
-                Text(stringResource(id = R.string.btn_apply_all_modules), style = MaterialTheme.typography.titleMedium)
+                Text(if (isEn) "Batch Apply All Imported Configs" else "一鍵套用所有匯入的配置", style = MaterialTheme.typography.titleMedium)
             }
         }
     }
 }
-
 
 data class PbFileInfo(
     val fileName: String,

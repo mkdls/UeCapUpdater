@@ -36,6 +36,8 @@ import com.topjohnwu.superuser.Shell
 import kotlinx.coroutines.*
 import java.io.File
 import java.io.FileOutputStream
+import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
+import androidx.compose.ui.draw.clip
 
 data class ConfigFile(val name: String, val sizeKb: Long)
 
@@ -60,8 +62,10 @@ fun MainScreen(viewModel: RootStatusViewModel = viewModel()) {
     val coroutineScope = rememberCoroutineScope()
 
     val configuration = LocalConfiguration.current
-    val currentLocaleTag = configuration.locales[0].toLanguageTag()
-    val isEn = currentLocaleTag.contains("en", ignoreCase = true)
+// 🚀 強制接管：首度載入時讀取系統語系，之後完全由本地 Compose 狀態操控，免疫系統 API 失效問題
+    var isEn by remember {
+        mutableStateOf(configuration.locales[0].toLanguageTag().contains("en", ignoreCase = true))
+    }
 
     var selectedFiles by remember { mutableStateOf<List<ConfigFile>>(emptyList()) }
     var isProcessing by remember { mutableStateOf(false) }
@@ -106,38 +110,50 @@ fun MainScreen(viewModel: RootStatusViewModel = viewModel()) {
         topBar = {
             Column {
                 CenterAlignedTopAppBar(
-                    title = { Text(stringResource(id = R.string.app_name)) },
+                    title = { Text("UECapUpdater") },
                     actions = {
                         TextButton(onClick = {
-                            val newLocaleTag = if (isEn) "zh-TW" else "en"
-                            AppCompatDelegate.setApplicationLocales(
-                                LocaleListCompat.forLanguageTags(newLocaleTag)
-                            )
+                            // 🚀 核心修復：直接反轉布林值，Compose 偵測到狀態改變會瞬間強制刷新整頁文字！
+                            isEn = !isEn
                         }) {
                             Text(
                                 text = if (isEn) "EN" else "中",
-                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant, // ✅ 契合 MD3 頂部列文字標準色
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 18.sp
                             )
                         }
                     },
                     colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.primaryContainer,
-                        titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                        containerColor = MaterialTheme.colorScheme.surface,
+                        titleContentColor = MaterialTheme.colorScheme.onSurface,
+                        actionIconContentColor = MaterialTheme.colorScheme.primary,
                     ),
                 )
 
                 TabRow(
                     selectedTabIndex = currentTab,
-                    containerColor = MaterialTheme.colorScheme.surface
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    indicator = { tabPositions ->
+                        if (currentTab < tabPositions.size) {
+                            TabRowDefaults.Indicator(
+                                modifier = Modifier
+                                    .tabIndicatorOffset(tabPositions[currentTab])
+                                    .padding(horizontal = 32.dp) // 🚀 左右往內縮，讓直線變短
+                                    .clip(androidx.compose.foundation.shape.RoundedCornerShape(50)), // 🚀 兩側變成極致圓潤
+                                height = 4.dp, // 稍微加粗一點更符合 MD3
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    },
+                    divider = {} // 🚀 隱藏原本貫穿整個螢幕的死板灰色底線
                 ) {
                     Tab(
                         selected = currentTab == 0,
                         onClick = { currentTab = 0 },
                         text = {
                             Text(
-                                stringResource(id = R.string.tab_single_file),
+                                if (isEn) "Single-File Mode" else "單檔套用模式",
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 14.sp
                             )
@@ -148,7 +164,7 @@ fun MainScreen(viewModel: RootStatusViewModel = viewModel()) {
                         onClick = { currentTab = 1 },
                         text = {
                             Text(
-                                stringResource(id = R.string.tab_module_extract),
+                                if (isEn) "Module Extract" else "Magisk 模組提取",
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 14.sp
                             )
@@ -204,7 +220,10 @@ fun MainScreen(viewModel: RootStatusViewModel = viewModel()) {
 
                         Card(
                             modifier = Modifier.fillMaxWidth(),
-                            colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E))
+                            colors = CardDefaults.cardColors(
+                                // ✅ 語法修復：精準改用主題內的容器色，拉出原廠設定的漂亮大方塊層次
+                                containerColor = MaterialTheme.colorScheme.surfaceContainer
+                            )
                         ) {
                             Column(modifier = Modifier.padding(16.dp)) {
                                 Text(
@@ -213,25 +232,33 @@ fun MainScreen(viewModel: RootStatusViewModel = viewModel()) {
                                     fontWeight = FontWeight.Bold
                                 )
                                 Spacer(modifier = Modifier.height(8.dp))
-                                Box(
-                                    modifier = Modifier
-                                        .heightIn(max = 300.dp)
-                                        .verticalScroll(scrollState)
+
+                                // 🚀 視覺微調：將日誌終端機的外框背景改為最低容器色，告別死黑，完美契合 M3 風格
+                                Card(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLowest)
                                 ) {
-                                    SelectionContainer {
-                                        Text(
-                                            text = shellLogs!!,
-                                            color = Color(0xFF00FF00),
-                                            fontFamily = FontFamily.Monospace,
-                                            fontSize = 12.sp,
-                                            lineHeight = 16.sp
-                                        )
+                                    Box(
+                                        modifier = Modifier
+                                            .heightIn(max = 300.dp)
+                                            .verticalScroll(scrollState)
+                                            .padding(8.dp) // 讓日誌文字與邊框有一點呼吸空間
+                                    ) {
+                                        SelectionContainer {
+                                            Text(
+                                                text = shellLogs!!,
+                                                // 🚀 提示：如果你想讓日誌顏色更柔和（仿 Android 終端機），可以把亮綠色改為 MaterialTheme.colorScheme.primary
+                                                color = Color(0xFF00FF00),
+                                                fontFamily = FontFamily.Monospace,
+                                                fontSize = 12.sp,
+                                                lineHeight = 16.sp
+                                            )
+                                        }
                                     }
                                 }
                             }
                         }
                     }
-
                     Button(
                         onClick = {
                             isApplying = true
@@ -260,7 +287,7 @@ fun MainScreen(viewModel: RootStatusViewModel = viewModel()) {
                             Text(if (isEn) "Injecting modem parameters..." else "正在注入基帶參數...")
                         } else {
                             Text(
-                                stringResource(id = R.string.btn_apply_reload),
+                                if (isEn) "Apply & Restart Radio" else "套用並重載基帶",
                                 style = MaterialTheme.typography.titleMedium
                             )
                         }
@@ -292,8 +319,9 @@ fun MainScreen(viewModel: RootStatusViewModel = viewModel()) {
                             )
                             Spacer(modifier = Modifier.width(12.dp))
                             Text(if (isEn) "Unmounting global configs..." else "正在卸載全域設定...")
+                            // 👉 精準替換為：
                         } else {
-                            Text(stringResource(id = R.string.btn_restore_factory))
+                            Text(if (isEn) "Restore Factory (Clear Configs)" else "恢復原廠基帶 (清除配置)")
                         }
                     }
                     Spacer(modifier = Modifier.height(16.dp))
@@ -305,7 +333,7 @@ fun MainScreen(viewModel: RootStatusViewModel = viewModel()) {
                         .fillMaxSize()
                         .padding(innerPadding)
                 ) {
-                    ModuleUpdaterScreen(detectedFilesState, moduleLogTextState)
+                    ModuleUpdaterScreen(detectedFilesState, moduleLogTextState, isEn)
                 }
             }
             2 -> {
@@ -525,7 +553,7 @@ private fun FileSelectionCard(
         ) {
 
             Text(
-                stringResource(id = R.string.card_title_baseband),
+                if (isEn) "Baseband Configuration Files" else "基帶配置檔案",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold
             )
@@ -558,7 +586,7 @@ private fun FileSelectionCard(
                 }
             } else {
                 Text(
-                    stringResource(id = R.string.msg_no_file_selected),
+                    if (isEn) "No files selected" else "尚未選擇任何檔案",
                     color = MaterialTheme.colorScheme.error
                 )
             }
@@ -576,9 +604,11 @@ private fun FileSelectionCard(
                 enabled = !isProcessing
             ) {
                 Text(
-                    if (files.isNotEmpty()) stringResource(id = R.string.btn_reselect_files) else stringResource(
-                        id = R.string.btn_select_files
-                    )
+                    if (files.isNotEmpty()) {
+                        if (isEn) "Reselect multiple files" else "重新選擇多個檔案"
+                    } else {
+                        if (isEn) "Select files" else "選擇檔案"
+                    }
                 )
             }
         }
