@@ -194,7 +194,7 @@ fun ModuleUpdaterScreen(
                     Shell.cmd("rm -rf /data/vendor/radio/modem_temp_file/*").exec()
 
                     for (fileInfo in detectedFiles) {
-                        val (success, fileLog) = ModuleParser.applyPbFile(context, fileInfo)
+                        val (success, fileLog) = ModuleParser.applyPbFile(context, fileInfo, isEn)
                         fileLog.lines().filter { it.isNotBlank() }.forEach { publish("[INFO] $it") }
 
                         withContext(Dispatchers.Main) {

@@ -46,7 +46,7 @@ object ModuleParser {
     /**
      * 提取選中的 binarypb，利用 libsu 取代並套用到手機系統中，並回傳詳細日誌
      */
-    fun applyPbFile(context: Context, fileInfo: PbFileInfo): Pair<Boolean, String> {
+    fun applyPbFile(context: Context, fileInfo: PbFileInfo, isEn: Boolean): Pair<Boolean, String> {
         val cacheFile = File(context.cacheDir, fileInfo.fileName)
         var extractSuccess = false
 
@@ -85,9 +85,11 @@ object ModuleParser {
             "if [ -f $targetVendor/${fileInfo.fileName} ]; then",
             "  nsenter -t 1 -m -- umount $targetVendor/${fileInfo.fileName} 2>/dev/null",
             "  nsenter -t 1 -m -- mount -o bind $targetOta/${fileInfo.fileName} $targetVendor/${fileInfo.fileName}",
-            "  echo \"👉 ${fileInfo.fileName} 全域掛載成功\"",
+// 👉 替換成功訊息
+            "  echo \"👉 ${fileInfo.fileName} ${if (isEn) "globally mounted successfully" else "全域掛載成功"}\"",
             "else",
-            "  echo \"⚠️ 系統原廠路徑找不到 ${fileInfo.fileName}，略過掛載\"",
+// 👉 替換警告訊息
+            "  echo \"⚠️ ${if (isEn) "Original factory path missing ${fileInfo.fileName}, skipping mount" else "系統原廠路徑找不到 ${fileInfo.fileName}，略過掛載"}\"",
             "fi"
         )
 
