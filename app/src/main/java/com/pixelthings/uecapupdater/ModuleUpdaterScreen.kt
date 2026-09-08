@@ -116,7 +116,11 @@ fun ModuleUpdaterScreen(
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text(
-                        text = if (applySuccess == null) "⏳ Running..." else if (applySuccess == true) "✅ Execution Complete" else "❌ Execution Failed",
+                        text = if (isEn) {
+                            if (applySuccess == null) "⏳ Running..." else if (applySuccess == true) "✅ Execution Complete" else "❌ Execution Failed"
+                        } else {
+                            if (applySuccess == null) "⏳ 執行中..." else if (applySuccess == true) "✅ 執行完成" else "❌ 執行失敗"
+                        },
                         color = if (applySuccess == null) Color(0xFFFFC107) else if (applySuccess == true) Color(0xFF4CAF50) else Color(0xFFF44336),
                         fontWeight = FontWeight.Bold
                     )
@@ -147,7 +151,7 @@ fun ModuleUpdaterScreen(
         Button(
             onClick = {
                 isApplying = true
-                shellLogs = "=== Module Extract & Global Mount ===\n"
+                shellLogs = if (isEn) "=== Module Extract & Global Mount ===\n" else "=== 模組提取與全域掛載 ===\n"
                 applySuccess = null
                 logText += if (isEn) "🚀 Batch applying ${detectedFiles.size} configurations...\n" else "🚀 開始批量套用 ${detectedFiles.size} 個配置檔...\n"
 
@@ -155,11 +159,11 @@ fun ModuleUpdaterScreen(
                     var successCount = 0
                     val publish = { line: String -> coroutineScope.launch(Dispatchers.Main) { shellLogs = (shellLogs ?: "") + line + "\n" } }
 
-                    publish("[INFO] Resetting Logcat buffer...")
+                    publish(if (isEn) "[INFO] Resetting Logcat buffer..." else "[INFO] 正在重設 Logcat 緩衝區...")
                     Shell.cmd("logcat -b all -c").exec()
                     delay(1500)
 
-                    publish("[INFO] Starting real-time Logcat stream daemon...")
+                    publish(if (isEn) "[INFO] Starting real-time Logcat stream daemon..." else "[INFO] 啟動即時 Logcat 監控守護進程...")
                     val logcatProcess = Runtime.getRuntime().exec(arrayOf("su", "-c", "logcat -v time -b all"))
                     val logcatJob = launch(Dispatchers.IO) {
                         try {
@@ -175,13 +179,14 @@ fun ModuleUpdaterScreen(
                                 }
                             }
                         } catch (e: Exception) {
-                            publish("[INFO] Logcat stream disconnected gracefully.")
+                            publish(if (isEn) "[INFO] Logcat stream disconnected gracefully." else "[INFO] Logcat 串流已正常斷開。")
                         }
                     }
 
-                    publish("[INFO] Requesting Root to scan & unmount active overrides in PID 1...")
-                    publish("[INFO] (This may take up to 5 seconds depending on Root overhead...)")
+                    publish(if (isEn) "[INFO] Requesting Root to scan & unmount active overrides in PID 1..." else "[INFO] 請求 Root 掃描並卸載 PID 1 中的活動掛載...")
+                    publish(if (isEn) "[INFO] (This may take up to 5 seconds depending on Root overhead...)" else "[INFO] (這可能需要長達 5 秒，視 Root 響應速度而定...)")
                     val cleanPrevMountsScript = """
+
                         for m in ${'$'}(grep "uecapconfig" /proc/mounts | awk '{print ${'$'}2}'); do
                             umount -l "${'$'}m" 2>/dev/null
                         done
@@ -190,7 +195,7 @@ fun ModuleUpdaterScreen(
                         done
                     """.trimIndent()
                     Shell.cmd("cat << 'EOF' > /data/local/tmp/unmount_uecap.sh\n$cleanPrevMountsScript\nEOF").exec()
-                    Shell.cmd("chmod 755 /data/local/tmp/unmount_uecap.sh && nsenter -t 1 -m -- /data/local/tmp/unmount_uecap.sh > /dev/null 2>&1 & sleep 1 && rm -f /data/local/tmp/unmount_uecap.sh").exec()
+                    Shell.cmd("chmod 755 /data/local/tmp/unmount_uecap.sh && nsenter -t 1 -m -- /data/local/tmp/unmount_uecap.sh && rm -f /data/local/tmp/unmount_uecap.sh").exec()
                     Shell.cmd("rm -rf /data/vendor/radio/modem_temp_file/*").exec()
 
                     for (fileInfo in detectedFiles) {
@@ -208,31 +213,32 @@ fun ModuleUpdaterScreen(
                     }
 
                     publish("-------------------------------------------------")
-                    publish("[INFO] Force killing modem daemons (Raw Boot)...")
-                    Shell.cmd("pkill -9 -f rild; pkill -9 -f shamp; pkill -9 -f vcd; pkill -9 -f modem").exec()
+                    publish(if (isEn) "[INFO] Triggering deep hardware modem reset (AT+GOOGCPRESET)..." else "[INFO] 觸發底層硬體數據機重置 (AT+GOOGCPRESET)...")
+// 🚀 向底層 umts_router 寫入 AT 指令，強制 CP (Cellular Processor) 徹底斷電冷啟動，強迫重讀 NV 快取！
+                    Shell.cmd("echo -e 'AT+GOOGCPRESET\\r' > /dev/umts_router").exec()
 
-                    publish("[INFO] Awaiting initial baseband parser process...")
+                    publish(if (isEn) "[INFO] Awaiting initial baseband parser process..." else "[INFO] 等待初始基帶解析程序...")
                     delay(4000)
 
-                    publish("[INFO] Reviving network and waiting for hardware registration...")
+                    publish(if (isEn) "[INFO] Reviving network and waiting for hardware registration..." else "[INFO] 恢復網路並等待硬體註冊...")
                     Shell.cmd("svc data disable").exec()
                     delay(1000)
                     Shell.cmd("svc data enable").exec()
 
                     // 🚀 呼叫智慧信號守護進程，不到黃河心不死
-                    val isLocked = awaitSignalLock { line -> publish(line) }
+                    val isLocked = awaitSignalLock(isEn) { line -> publish(line) }
                     if (!isLocked) {
-                        publish("[ERROR] Baseband might be unstable. Please check Terminal for deep errors.")
+                        publish(if (isEn) "[ERROR] Baseband might be unstable. Please check Terminal for deep errors." else "[錯誤] 基帶可能不穩定。請檢查終端機以獲取深層錯誤。")
                     }
                     publish("=================================================")
-                    publish("=== Done ===")
+                    publish(if (isEn) "=== Done ===" else "=== 執行完畢 ===")
 
                     logcatProcess.destroy()
                     logcatJob.cancel()
 
-                    val bootScriptSuccess = ModuleParser.createMagiskModule()
+                    val bootScriptSuccess = ModuleParser.createMagiskModule(isEn)
                     if (bootScriptSuccess) {
-                        publish("[INFO] 👉 Magisk boot mount module generated successfully!")
+                        publish(if (isEn) "[INFO] 👉 Magisk boot mount module generated successfully!" else "[INFO] 👉 Magisk 開機掛載模組已成功生成！")
                     }
 
                     withContext(Dispatchers.Main) {

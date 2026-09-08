@@ -17,6 +17,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -38,6 +40,12 @@ import java.io.File
 import java.io.FileOutputStream
 import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.ui.draw.clip
+import androidx.compose.material3.ElevatedFilterChip
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.animation.*
+import androidx.compose.animation.core.tween
 
 data class ConfigFile(val name: String, val sizeKb: Long)
 
@@ -62,10 +70,13 @@ fun MainScreen(viewModel: RootStatusViewModel = viewModel()) {
     val coroutineScope = rememberCoroutineScope()
 
     val configuration = LocalConfiguration.current
-// 🚀 強制接管：首度載入時讀取系統語系，之後完全由本地 Compose 狀態操控，免疫系統 API 失效問題
-    var isEn by remember {
+    // 將 currentTab 宣告改為支援 rememberSaveable
+    var currentTab by rememberSaveable { mutableStateOf(0) }
+    var isEn by rememberSaveable {
         mutableStateOf(configuration.locales[0].toLanguageTag().contains("en", ignoreCase = true))
     }
+    var showMenu by remember { mutableStateOf(false) }
+    var showAboutDialog by remember { mutableStateOf(false) }
 
     var selectedFiles by remember { mutableStateOf<List<ConfigFile>>(emptyList()) }
     var isProcessing by remember { mutableStateOf(false) }
@@ -101,7 +112,6 @@ fun MainScreen(viewModel: RootStatusViewModel = viewModel()) {
         }
     }
 
-    var currentTab by remember { mutableStateOf(0) }
     val detectedFilesState: MutableState<List<PbFileInfo>> = remember { mutableStateOf(emptyList()) }
     val moduleLogTextState: MutableState<String> = remember { mutableStateOf(if (isEn) "Waiting for modules...\n" else "等待選擇模組...\n") }
 
@@ -110,17 +120,88 @@ fun MainScreen(viewModel: RootStatusViewModel = viewModel()) {
         topBar = {
             Column {
                 CenterAlignedTopAppBar(
-                    title = { Text("UECapUpdater") },
+                    title = {
+                        // 🚀 標題淡入淡出過渡
+                        AnimatedContent(
+                            targetState = when (currentTab) {
+                                2 -> if (isEn) "Terminal" else "終端除錯"
+                                3 -> if (isEn) "Active Configs" else "生效配置"
+                                4 -> if (isEn) "Editor" else "編輯器"
+                                else -> "UECapUpdater"
+                            },
+                            transitionSpec = {
+                                fadeIn(animationSpec = tween(220)) togetherWith
+                                        fadeOut(animationSpec = tween(150))
+                            },
+                            label = "TitleTransition"
+                        ) { targetTitle ->
+                            Text(targetTitle)
+                        }
+                    },
+                    navigationIcon = {
+                        // 🚀 返回按鈕淡入展開動畫
+                        AnimatedVisibility(
+                            visible = currentTab >= 2,
+                            enter = fadeIn(animationSpec = tween(200)) + expandHorizontally(),
+                            exit = fadeOut(animationSpec = tween(150)) + shrinkHorizontally()
+                        ) {
+                            IconButton(onClick = { currentTab = 0 }) {
+                                Icon(
+                                    imageVector = Icons.Default.ArrowBack,
+                                    contentDescription = "Back",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    },
                     actions = {
-                        TextButton(onClick = {
-                            // 🚀 核心修復：直接反轉布林值，Compose 偵測到狀態改變會瞬間強制刷新整頁文字！
-                            isEn = !isEn
-                        }) {
+                        TextButton(onClick = { isEn = !isEn }) {
                             Text(
                                 text = if (isEn) "EN" else "中",
-                                color = MaterialTheme.colorScheme.onSurfaceVariant, // ✅ 契合 MD3 頂部列文字標準色
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 18.sp
+                            )
+                        }
+                        IconButton(onClick = { showMenu = !showMenu }) {
+                            Icon(
+                                imageVector = Icons.Default.MoreVert,
+                                contentDescription = "Menu",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        DropdownMenu(
+                            expanded = showMenu,
+                            onDismissRequest = { showMenu = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text(if (isEn) "Editor" else "編輯器") },
+                                onClick = {
+                                    showMenu = false
+                                    currentTab = 4
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text(if (isEn) "Active Configs" else "生效配置") },
+                                onClick = {
+                                    showMenu = false
+                                    currentTab = 3
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text(if (isEn) "Terminal" else "終端除錯") },
+                                onClick = {
+                                    showMenu = false
+                                    currentTab = 2
+                                }
+                            )
+                            HorizontalDivider()
+                            DropdownMenuItem(
+                                text = { Text(if (isEn) "About" else "關於") },
+                                onClick = {
+                                    showMenu = false
+                                    showAboutDialog = true
+                                }
                             )
                         }
                     },
@@ -131,219 +212,289 @@ fun MainScreen(viewModel: RootStatusViewModel = viewModel()) {
                     ),
                 )
 
-                TabRow(
-                    selectedTabIndex = currentTab,
-                    containerColor = MaterialTheme.colorScheme.surface,
-                    indicator = { tabPositions ->
-                        if (currentTab < tabPositions.size) {
-                            TabRowDefaults.Indicator(
-                                modifier = Modifier
-                                    .tabIndicatorOffset(tabPositions[currentTab])
-                                    .padding(horizontal = 32.dp) // 🚀 左右往內縮，讓直線變短
-                                    .clip(androidx.compose.foundation.shape.RoundedCornerShape(50)), // 🚀 兩側變成極致圓潤
-                                height = 4.dp, // 稍微加粗一點更符合 MD3
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                    },
-                    divider = {} // 🚀 隱藏原本貫穿整個螢幕的死板灰色底線
+                // 🚀 Tab 列展開／垂直縮放收起動畫
+                AnimatedVisibility(
+                    visible = currentTab < 2,
+                    enter = expandVertically(animationSpec = tween(250)) + fadeIn(animationSpec = tween(200)),
+                    exit = shrinkVertically(animationSpec = tween(200)) + fadeOut(animationSpec = tween(150))
                 ) {
-                    Tab(
-                        selected = currentTab == 0,
-                        onClick = { currentTab = 0 },
-                        text = {
-                            Text(
-                                if (isEn) "Single-File Mode" else "單檔套用模式",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 14.sp
-                            )
-                        }
-                    )
-                    Tab(
-                        selected = currentTab == 1,
-                        onClick = { currentTab = 1 },
-                        text = {
-                            Text(
-                                if (isEn) "Module Extract" else "Magisk 模組提取",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 14.sp
-                            )
-                        }
-                    )
-                    Tab(
-                        selected = currentTab == 2,
-                        onClick = { currentTab = 2 },
-                        text = {
-                            Text(
-                                if (isEn) "Terminal" else "終端除錯",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 14.sp
-                            )
-                        }
-                    )
+                    TabRow(
+                        selectedTabIndex = currentTab,
+                        containerColor = MaterialTheme.colorScheme.surface,
+                        indicator = { tabPositions ->
+                            if (currentTab < tabPositions.size) {
+                                TabRowDefaults.Indicator(
+                                    modifier = Modifier
+                                        .tabIndicatorOffset(tabPositions[currentTab])
+                                        .padding(horizontal = 48.dp)
+                                        .clip(androidx.compose.foundation.shape.RoundedCornerShape(50)),
+                                    height = 4.dp,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        },
+                        divider = {}
+                    ) {
+                        Tab(
+                            selected = currentTab == 0,
+                            onClick = { currentTab = 0 },
+                            text = {
+                                Text(
+                                    if (isEn) "Single-File Mode" else "單檔套用模式",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 14.sp
+                                )
+                            }
+                        )
+                        Tab(
+                            selected = currentTab == 1,
+                            onClick = { currentTab = 1 },
+                            text = {
+                                Text(
+                                    if (isEn) "Module Extract" else "Magisk 模組提取",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 14.sp
+                                )
+                            }
+                        )
+                    }
                 }
             }
         },
     ) { innerPadding ->
-        when (currentTab) {
-            0 -> {
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(innerPadding)
-                        .padding(horizontal = 24.dp, vertical = 16.dp)
-                        .verticalScroll(rememberScrollState()),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    RootStatusCard(
-                        rootStatus = rootStatus,
-                        isEn = isEn,
-                        onRetryClick = { viewModel.checkRootAccess() })
+        // 🚀 核心畫面切換動畫 (滑動 + 淡入淡出)
+        AnimatedContent(
+            targetState = currentTab,
+            transitionSpec = {
+                if (targetState > initialState) {
+                    (slideInHorizontally(animationSpec = tween(250)) { it / 3 } + fadeIn(animationSpec = tween(250))) togetherWith
+                            (slideOutHorizontally(animationSpec = tween(200)) { -it / 3 } + fadeOut(animationSpec = tween(200)))
+                } else {
+                    (slideInHorizontally(animationSpec = tween(250)) { -it / 3 } + fadeIn(animationSpec = tween(250))) togetherWith
+                            (slideOutHorizontally(animationSpec = tween(200)) { it / 3 } + fadeOut(animationSpec = tween(200)))
+                }
+            },
+            modifier = Modifier.fillMaxSize(),
+            label = "TabContentAnimation"
+        ) { targetTab ->
+            when (targetTab) {
+                0 -> {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(innerPadding)
+                            .padding(horizontal = 24.dp, vertical = 16.dp)
+                            .verticalScroll(rememberScrollState()),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        RootStatusCard(
+                            rootStatus = rootStatus,
+                            isEn = isEn,
+                            onRetryClick = { viewModel.checkRootAccess() }
+                        )
 
-                    FileSelectionCard(
-                        files = selectedFiles,
-                        isProcessing = isProcessing,
-                        errorMessage = errorMessage,
-                        onSelectClick = { launcher.launch("*/*") },
-                        isEn = isEn
-                    )
+                        FileSelectionCard(
+                            files = selectedFiles,
+                            isProcessing = isProcessing,
+                            errorMessage = errorMessage,
+                            onSelectClick = { launcher.launch("*/*") },
+                            isEn = isEn
+                        )
 
-                    var applySuccess by remember { mutableStateOf<Boolean?>(null) }
-                    var shellLogs by remember { mutableStateOf<String?>(null) }
+                        var applySuccess by remember { mutableStateOf<Boolean?>(null) }
+                        var shellLogs by remember { mutableStateOf<String?>(null) }
 
-                    if (shellLogs != null) {
-                        val scrollState = rememberScrollState()
-                        LaunchedEffect(shellLogs) {
-                            scrollState.scrollTo(scrollState.maxValue)
-                        }
+                        if (shellLogs != null) {
+                            val scrollState = rememberScrollState()
+                            LaunchedEffect(shellLogs) {
+                                scrollState.scrollTo(scrollState.maxValue)
+                            }
 
-                        Card(
-                            modifier = Modifier.fillMaxWidth(),
-                            colors = CardDefaults.cardColors(
-                                // ✅ 語法修復：精準改用主題內的容器色，拉出原廠設定的漂亮大方塊層次
-                                containerColor = MaterialTheme.colorScheme.surfaceContainer
-                            )
-                        ) {
-                            Column(modifier = Modifier.padding(16.dp)) {
-                                Text(
-                                    text = if (applySuccess == null) "⏳ Running..." else if (applySuccess == true) "✅ Execution Complete" else "❌ Execution Failed",
-                                    color = if (applySuccess == null) Color(0xFFFFC107) else if (applySuccess == true) Color(0xFF4CAF50) else Color(0xFFF44336),
-                                    fontWeight = FontWeight.Bold
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = MaterialTheme.colorScheme.surfaceContainer
                                 )
-                                Spacer(modifier = Modifier.height(8.dp))
+                            ) {
+                                Column(modifier = Modifier.padding(16.dp)) {
+                                    Text(
+                                        text = if (applySuccess == null) "⏳ Running..." else if (applySuccess == true) "✅ Execution Complete" else "❌ Execution Failed",
+                                        color = if (applySuccess == null) Color(0xFFFFC107) else if (applySuccess == true) Color(0xFF4CAF50) else Color(0xFFF44336),
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Spacer(modifier = Modifier.height(8.dp))
 
-                                // 🚀 視覺微調：將日誌終端機的外框背景改為最低容器色，告別死黑，完美契合 M3 風格
-                                Card(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLowest)
-                                ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .heightIn(max = 300.dp)
-                                            .verticalScroll(scrollState)
-                                            .padding(8.dp) // 讓日誌文字與邊框有一點呼吸空間
+                                    Card(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLowest)
                                     ) {
-                                        SelectionContainer {
-                                            Text(
-                                                text = shellLogs!!,
-                                                // 🚀 提示：如果你想讓日誌顏色更柔和（仿 Android 終端機），可以把亮綠色改為 MaterialTheme.colorScheme.primary
-                                                color = Color(0xFF00FF00),
-                                                fontFamily = FontFamily.Monospace,
-                                                fontSize = 12.sp,
-                                                lineHeight = 16.sp
-                                            )
+                                        Box(
+                                            modifier = Modifier
+                                                .heightIn(max = 300.dp)
+                                                .verticalScroll(scrollState)
+                                                .padding(8.dp)
+                                        ) {
+                                            SelectionContainer {
+                                                Text(
+                                                    text = shellLogs!!,
+                                                    color = Color(0xFF00FF00),
+                                                    fontFamily = FontFamily.Monospace,
+                                                    fontSize = 12.sp,
+                                                    lineHeight = 16.sp
+                                                )
+                                            }
                                         }
                                     }
                                 }
                             }
                         }
-                    }
-                    Button(
-                        onClick = {
-                            isApplying = true
-                            shellLogs = ""
-                            applySuccess = null
-                            coroutineScope.launch {
-                                val success = applyModemConfigRealTime(context) { line ->
-                                    shellLogs = (shellLogs ?: "") + line + "\n"
-                                }
-                                applySuccess = success
-                                isApplying = false
-                            }
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(56.dp),
-                        enabled = selectedFiles.isNotEmpty() && !isApplying && !isResetting && rootStatus == RootStatus.Granted,
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
-                    ) {
-                        if (isApplying) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(24.dp),
-                                color = MaterialTheme.colorScheme.onPrimary
-                            )
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Text(if (isEn) "Injecting modem parameters..." else "正在注入基帶參數...")
-                        } else {
-                            Text(
-                                if (isEn) "Apply & Restart Radio" else "套用並重載基帶",
-                                style = MaterialTheme.typography.titleMedium
-                            )
-                        }
-                    }
 
-                    OutlinedButton(
-                        onClick = {
-                            isResetting = true
-                            shellLogs = ""
-                            applySuccess = null
-                            coroutineScope.launch {
-                                val success = resetModemConfigRealTime(context) { line ->
-                                    shellLogs = (shellLogs ?: "") + line + "\n"
+                        Button(
+                            onClick = {
+                                isApplying = true
+                                shellLogs = ""
+                                applySuccess = null
+                                coroutineScope.launch {
+                                    val success = applyModemConfigRealTime(context, isEn) { line ->
+                                        shellLogs = (shellLogs ?: "") + line + "\n"
+                                    }
+                                    applySuccess = success
+                                    isApplying = false
                                 }
-                                applySuccess = success
-                                isResetting = false
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(56.dp),
+                            enabled = selectedFiles.isNotEmpty() && !isApplying && !isResetting && rootStatus == RootStatus.Granted,
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                        ) {
+                            if (isApplying) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(24.dp),
+                                    color = MaterialTheme.colorScheme.onPrimary
+                                )
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Text(if (isEn) "Injecting modem parameters..." else "正在注入基帶參數...")
+                            } else {
+                                Text(
+                                    if (isEn) "Apply & Restart Radio" else "套用並重載基帶",
+                                    style = MaterialTheme.typography.titleMedium
+                                )
                             }
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(48.dp),
-                        enabled = !isApplying && !isResetting && rootStatus == RootStatus.Granted,
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
-                    ) {
-                        if (isResetting) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(20.dp),
-                                color = MaterialTheme.colorScheme.error
-                            )
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Text(if (isEn) "Unmounting global configs..." else "正在卸載全域設定...")
-                            // 👉 精準替換為：
-                        } else {
-                            Text(if (isEn) "Restore Factory (Clear Configs)" else "恢復原廠基帶 (清除配置)")
                         }
+
+                        OutlinedButton(
+                            onClick = {
+                                isResetting = true
+                                shellLogs = ""
+                                applySuccess = null
+                                coroutineScope.launch {
+                                    val success = resetModemConfigRealTime(context, isEn) { line ->
+                                        shellLogs = (shellLogs ?: "") + line + "\n"
+                                    }
+                                    applySuccess = success
+                                    isResetting = false
+                                }
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(48.dp),
+                            enabled = !isApplying && !isResetting && rootStatus == RootStatus.Granted,
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                        ) {
+                            if (isResetting) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(20.dp),
+                                    color = MaterialTheme.colorScheme.error
+                                )
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Text(if (isEn) "Unmounting global configs..." else "正在卸載全域設定...")
+                            } else {
+                                Text(if (isEn) "Restore Factory (Clear Configs)" else "恢復原廠基帶 (清除配置)")
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(16.dp))
                     }
-                    Spacer(modifier = Modifier.height(16.dp))
                 }
-            }
-            1 -> {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(innerPadding)
-                ) {
-                    ModuleUpdaterScreen(detectedFilesState, moduleLogTextState, isEn)
+                1 -> {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(innerPadding)
+                    ) {
+                        ModuleUpdaterScreen(detectedFilesState, moduleLogTextState, isEn)
+                    }
                 }
-            }
-            2 -> {
-                Box(modifier = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding)) {
-                    DebugConsoleScreen(isEn = isEn, rootStatus = rootStatus)
+                2 -> {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(innerPadding)
+                    ) {
+                        DebugConsoleScreen(isEn = isEn, rootStatus = rootStatus)
+                    }
+                }
+                3 -> {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(innerPadding)
+                    ) {
+                        ActiveConfigsScreen(isEn = isEn, rootStatus = rootStatus)
+                    }
+                }
+                4 -> {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(innerPadding)
+                    ) {
+                        UecapEditorScreen(isEn = isEn)
+                    }
                 }
             }
         }
+    }
+
+    if (showAboutDialog) {
+        AlertDialog(
+            onDismissRequest = { showAboutDialog = false },
+            title = { Text(if (isEn) "About" else "關於本程式") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "UECapUpdater",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = if (isEn)
+                            "A tool for dynamically injecting and managing Pixel 5G baseband capabilities."
+                        else
+                            "動態注入與管理 Pixel 5G 基帶頻段配置的實用工具。",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+                    Text(
+                        text = if (isEn) "Acknowledgments:" else "特別鳴謝：",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        // 標註 HTML 原作者來源
+                        text = "Core UI layout and UECAP encoding logic are inspired by nxij/pixel-pb. PB decoding powered by Protocol Buffers.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showAboutDialog = false }) {
+                    Text(if (isEn) "Close" else "關閉")
+                }
+            }
+        )
     }
 }
 
@@ -673,7 +824,7 @@ suspend fun copyMultipleFiles(
 }
 
 // 🚀 智慧拆解：單檔套用協程流式實時日誌 (混合 Logcat 即時流)
-suspend fun applyModemConfigRealTime(context: Context, onLogLine: (String) -> Unit): Boolean =
+suspend fun applyModemConfigRealTime(context: Context, isEn: Boolean, onLogLine: (String) -> Unit): Boolean =
     withContext(Dispatchers.IO) {
         suspend fun publish(line: String) {
             withContext(Dispatchers.Main) { onLogLine(line) }
@@ -681,14 +832,14 @@ suspend fun applyModemConfigRealTime(context: Context, onLogLine: (String) -> Un
         val privateDir = context.filesDir.absolutePath
 
         publish("=================================================")
-        publish("          ✨ Loading Custom UECAP Configs ✨      ")
+        publish(if (isEn) "          ✨ Loading Custom UECAP Configs ✨      " else "          ✨ 正在載入自定義 UECAP 配置 ✨       ")
         publish("=================================================")
 
-        publish("[INFO] Resetting Logcat buffer...")
+        publish(if (isEn) "[INFO] Resetting Logcat buffer..." else "[INFO] 正在重設 Logcat 緩衝區...")
         Shell.cmd("logcat -b all -c").exec()
         delay(1500) // 🚀 關鍵修復 1：給系統足夠時間把舊日誌沖刷乾淨
 
-        publish("[INFO] Starting real-time Logcat stream daemon...")
+        publish(if (isEn) "[INFO] Starting real-time Logcat stream daemon..." else "[INFO] 啟動即時 Logcat 監控守護進程...")
         val logcatProcess = Runtime.getRuntime().exec(arrayOf("su", "-c", "logcat -v time -b all"))
         val logcatJob = launch(Dispatchers.IO) {
             try {
@@ -706,12 +857,12 @@ suspend fun applyModemConfigRealTime(context: Context, onLogLine: (String) -> Un
                     }
                 }
             } catch (e: Exception) {
-                publish("[INFO] Logcat stream disconnected gracefully.")
+                publish(if (isEn) "[INFO] Logcat stream disconnected gracefully." else "[INFO] Logcat 串流已正常斷開。")
             }
         }
 
-        publish("[INFO] Requesting Root to scan & unmount active overrides in PID 1...")
-        publish("[INFO] (This may take up to 5 seconds depending on Root overhead...)")
+        publish(if (isEn) "[INFO] Requesting Root to scan & unmount active overrides in PID 1..." else "[INFO] 請求 Root 掃描並卸載 PID 1 中的活動掛載...")
+        publish(if (isEn) "[INFO] (This may take up to 5 seconds depending on Root overhead...)" else "[INFO] (這可能需要長達 5 秒，視 Root 響應速度而定...)")
         val unmountScript = """
             for m in ${'$'}(grep "uecapconfig" /proc/mounts | awk '{print ${'$'}2}'); do
                 umount -l "${'$'}m" 2>/dev/null
@@ -721,12 +872,12 @@ suspend fun applyModemConfigRealTime(context: Context, onLogLine: (String) -> Un
             done
         """.trimIndent()
         Shell.cmd("cat << 'EOF' > /data/local/tmp/unmount_uecap.sh\n$unmountScript\nEOF").exec()
-        Shell.cmd("chmod 755 /data/local/tmp/unmount_uecap.sh && nsenter -t 1 -m -- /data/local/tmp/unmount_uecap.sh > /dev/null 2>&1 & sleep 1 && rm -f /data/local/tmp/unmount_uecap.sh").exec()
+        Shell.cmd("chmod 755 /data/local/tmp/unmount_uecap.sh && nsenter -t 1 -m -- /data/local/tmp/unmount_uecap.sh && rm -f /data/local/tmp/unmount_uecap.sh").exec()
 
-        publish("[INFO] Cleaning cache directories...")
+        publish(if (isEn) "[INFO] Cleaning cache directories..." else "[INFO] 正在清理緩存目錄...")
         Shell.cmd("rm -rf /data/vendor/radio/ota_uecap/* /data/vendor/radio/modem_temp_file/*").exec()
 
-        publish("[INFO] Processing and staging configurations...")
+        publish(if (isEn) "[INFO] Processing and staging configurations..." else "[INFO] 正在處理並暫存配置...")
         val pbFiles = File(privateDir).listFiles { _, name -> name.endsWith(".binarypb") } ?: emptyArray()
         for (file in pbFiles) {
             val targetOta = "/data/vendor/radio/ota_uecap/${file.name}"
@@ -734,7 +885,7 @@ suspend fun applyModemConfigRealTime(context: Context, onLogLine: (String) -> Un
             Shell.cmd("chown radio:radio \"$targetOta\" && chcon u:object_r:vendor_file:s0 \"$targetOta\" && chmod 644 \"$targetOta\"").exec()
         }
 
-        publish("[INFO] Executing batch binding mounts...")
+        publish(if (isEn) "[INFO] Executing batch binding mounts..." else "[INFO] 正在執行批量掛載...")
         val mountScript = """
             #!/system/bin/sh
             for TARGET_OTA in /data/vendor/radio/ota_uecap/*.binarypb; do
@@ -744,7 +895,7 @@ suspend fun applyModemConfigRealTime(context: Context, onLogLine: (String) -> Un
                     if [ -f "${'$'}TARGET_VENDOR" ]; then
                         mount -o bind "${'$'}TARGET_OTA" "${'$'}TARGET_VENDOR"
                         if [ ${'$'}? -eq 0 ]; then
-                            echo "[INFO] 👉 ${'$'}FILENAME bound globally"
+                            echo "[INFO] 👉 ${'$'}FILENAME globally mounted"
                         else
                             echo "[INFO] ❌ ${'$'}FILENAME bind failed"
                         fi
@@ -753,53 +904,54 @@ suspend fun applyModemConfigRealTime(context: Context, onLogLine: (String) -> Un
             done
         """.trimIndent()
         Shell.cmd("cat << 'EOF' > /data/local/tmp/mount_uecap.sh\n$mountScript\nEOF").exec()
-        val mountResult = Shell.cmd("chmod 755 /data/local/tmp/mount_uecap.sh && nsenter -t 1 -m -- /data/local/tmp/mount_uecap.sh && rm -f /data/local/tmp/mount_uecap.sh").exec()
+        val mountResult = Shell.cmd("chmod 755 /data/local/tmp/mount_uecap.sh && nsenter -t 1 -m -- /data/local/tmp/mount_uecap.sh && rm -f /data/local/tmp/unmount_uecap.sh").exec()
         mountResult.out.forEach { publish(it) }
 
         publish("-------------------------------------------------")
-        publish("[INFO] Force killing modem daemons (Raw Boot)...")
-        Shell.cmd("pkill -9 -f rild; pkill -9 -f shamp; pkill -9 -f vcd; pkill -9 -f modem").exec()
+        publish(if (isEn) "[INFO] Triggering deep hardware modem reset (AT+GOOGCPRESET)..." else "[INFO] 觸發底層硬體數據機重置 (AT+GOOGCPRESET)...")
+// 🚀 向底層 umts_router 寫入 AT 指令，強制 CP (Cellular Processor) 徹底斷電冷啟動，強迫重讀 NV 快取！
+        Shell.cmd("echo -e 'AT+GOOGCPRESET\\r' > /dev/umts_router").exec()
 
-        publish("[INFO] Awaiting initial baseband parser process...")
+        publish(if (isEn) "[INFO] Awaiting initial baseband parser process..." else "[INFO] 等待初始基帶解析程序...")
         delay(4000)
 
-        publish("[INFO] Reviving network and waiting for hardware registration...")
+        publish(if (isEn) "[INFO] Reviving network and waiting for hardware registration..." else "[INFO] 恢復網路並等待硬體註冊...")
         Shell.cmd("svc data disable").exec()
         delay(1000)
         Shell.cmd("svc data enable").exec()
 
         // 🚀 呼叫智慧信號守護進程，不到黃河心不死
-        val isLocked = awaitSignalLock { line -> publish(line) }
+        val isLocked = awaitSignalLock(isEn) { line -> publish(line) }
         if (!isLocked) {
-            publish("[ERROR] Baseband might be unstable. Please check Terminal for deep errors.")
+            publish(if (isEn) "[ERROR] Baseband might be unstable. Please check Terminal for deep errors." else "[錯誤] 基帶可能不穩定。請檢查終端機以獲取深層錯誤。")
         }
         publish("=================================================")
-        publish("=== Done ===")
+        publish(if (isEn) "=== Done ===" else "=== 執行完畢 ===")
 
         // 🛑 停止背景 Logcat 監聽
         logcatProcess.destroy()
         logcatJob.cancel()
 
-        ModuleParser.createMagiskModule()
+        ModuleParser.createMagiskModule(isEn)
         return@withContext true
     }
 
 // 🚀 智慧拆解：恢復原廠協程流式實時日誌 (混合 Logcat 即時流)
-suspend fun resetModemConfigRealTime(context: Context, onLogLine: (String) -> Unit): Boolean =
+suspend fun resetModemConfigRealTime(context: Context, isEn: Boolean, onLogLine: (String) -> Unit): Boolean =
     withContext(Dispatchers.IO) {
         suspend fun publish(line: String) {
             withContext(Dispatchers.Main) { onLogLine(line) }
         }
 
         publish("=================================================")
-        publish("          ✨ Restoring Factory Baseband ✨       ")
+        publish(if (isEn) "          ✨ Restoring Factory Baseband ✨       " else "          ✨ 正在恢復原廠基帶設定 ✨       ")
         publish("=================================================")
 
-        publish("[INFO] Resetting Logcat buffer...")
+        publish(if (isEn) "[INFO] Resetting Logcat buffer..." else "[INFO] 正在重設 Logcat 緩衝區...")
         Shell.cmd("logcat -b all -c").exec()
         delay(1500) // 🚀 關鍵修復 1：給系統足夠時間把舊日誌沖刷乾淨
 
-        publish("[INFO] Starting real-time Logcat stream daemon...")
+        publish(if (isEn) "[INFO] Starting real-time Logcat stream daemon..." else "[INFO] 啟動即時 Logcat 監控守護進程...")
         val logcatProcess = Runtime.getRuntime().exec(arrayOf("su", "-c", "logcat -v time -b all"))
         val logcatJob = launch(Dispatchers.IO) {
             try {
@@ -817,12 +969,12 @@ suspend fun resetModemConfigRealTime(context: Context, onLogLine: (String) -> Un
                     }
                 }
             } catch (e: Exception) {
-                publish("[INFO] Logcat stream disconnected gracefully.")
+                publish(if (isEn) "[INFO] Logcat stream disconnected gracefully." else "[INFO] Logcat 串流已正常斷開。")
             }
         }
 
-        publish("[INFO] Requesting Root to scan & unmount active overrides in PID 1...")
-        publish("[INFO] (This may take up to 5 seconds depending on Root overhead...)")
+        publish(if (isEn) "[INFO] Requesting Root to scan & unmount active overrides in PID 1..." else "[INFO] 請求 Root 掃描並卸載 PID 1 中的活動掛載...")
+        publish(if (isEn) "[INFO] (This may take up to 5 seconds depending on Root overhead...)" else "[INFO] (這可能需要長達 5 秒，視 Root 響應速度而定...)")
         val unmountScript = """
             for m in ${'$'}(grep "uecapconfig" /proc/mounts | awk '{print ${'$'}2}'); do
                 umount -l "${'$'}m" 2>/dev/null
@@ -833,30 +985,31 @@ suspend fun resetModemConfigRealTime(context: Context, onLogLine: (String) -> Un
             done
         """.trimIndent()
         Shell.cmd("cat << 'EOF' > /data/local/tmp/unmount_uecap.sh\n$unmountScript\nEOF").exec()
-        val unmountResult = Shell.cmd("chmod 755 /data/local/tmp/unmount_uecap.sh && nsenter -t 1 -m -- /data/local/tmp/unmount_uecap.sh > /dev/null 2>&1 & sleep 1 && rm -f /data/local/tmp/unmount_uecap.sh").exec()
+        val unmountResult = Shell.cmd("chmod 755 /data/local/tmp/unmount_uecap.sh && nsenter -t 1 -m -- /data/local/tmp/unmount_uecap.sh && rm -f /data/local/tmp/unmount_uecap.sh").exec()
         unmountResult.out.forEach { publish(it) }
 
-        publish("[INFO] Cleaning cache directories...")
+        publish(if (isEn) "[INFO] Cleaning cache directories..." else "[INFO] 正在清理緩存目錄...")
         Shell.cmd("rm -rf /data/vendor/radio/ota_uecap/* /data/vendor/radio/modem_temp_file/*").exec()
 
-        publish("[INFO] Force killing modem daemons (Raw Boot)...")
-        Shell.cmd("pkill -9 -f rild; pkill -9 -f shamp; pkill -9 -f vcd; pkill -9 -f modem").exec()
+        publish(if (isEn) "[INFO] Triggering deep hardware modem reset (AT+GOOGCPRESET)..." else "[INFO] 觸發底層硬體數據機重置 (AT+GOOGCPRESET)...")
+// 🚀 向底層 umts_router 寫入 AT 指令，強制 CP (Cellular Processor) 徹底斷電冷啟動，強迫重讀 NV 快取！
+        Shell.cmd("echo -e 'AT+GOOGCPRESET\\r' > /dev/umts_router").exec()
 
-        publish("[INFO] Awaiting hardware fallback to pure factory state...")
+        publish(if (isEn) "[INFO] Awaiting hardware fallback to pure factory state..." else "[INFO] 等待硬體回退至純淨原廠狀態...")
         delay(4000)
 
-        publish("[INFO] Reviving factory network and waiting for carrier registration...")
+        publish(if (isEn) "[INFO] Reviving factory network and waiting for carrier registration..." else "[INFO] 恢復原廠網路並等待電信商註冊...")
         Shell.cmd("svc data disable").exec()
         delay(1000)
         Shell.cmd("svc data enable").exec()
 
         // 🚀 呼叫智慧信號守護進程，不到黃河心不死
-        val isLocked = awaitSignalLock { line -> publish(line) }
+        val isLocked = awaitSignalLock(isEn) { line -> publish(line) }
         if (!isLocked) {
-            publish("[ERROR] Baseband might be unstable. Please check Terminal for deep errors.")
+            publish(if (isEn) "[ERROR] Baseband might be unstable. Please check Terminal for deep errors." else "[錯誤] 基帶可能不穩定。請檢查終端機以獲取深層錯誤。")
         }
         publish("=================================================")
-        publish("=== Factory Reset Complete ===")
+        publish(if (isEn) "=== Factory Reset Complete ===" else "=== 原廠恢復完成 ===")
 
         logcatProcess.destroy()
         logcatJob.cancel()
@@ -866,8 +1019,8 @@ suspend fun resetModemConfigRealTime(context: Context, onLogLine: (String) -> Un
     }
 
 // 🚀 核心升級：動態信號鎖定守護進程 (過濾歷史日誌 ＋ 正向計時)
-suspend fun awaitSignalLock(publish: suspend (String) -> Unit): Boolean {
-    publish("[INFO] Monitoring native Android telephony state...")
+suspend fun awaitSignalLock(isEn: Boolean, publish: suspend (String) -> Unit): Boolean {
+    publish(if (isEn) "[INFO] Monitoring native Android telephony state..." else "[INFO] 正在監控原生 Android 通訊狀態...")
     var realSignalConfirmed = false
     var counter = 0
     val maxWaitSeconds = 90 // 安全底線
@@ -885,31 +1038,183 @@ suspend fun awaitSignalLock(publish: suspend (String) -> Unit): Boolean {
 
         if (counter <= 8) {
             if (isShampAlive) {
-                publish("[INFO] ⏳ Baseband daemon initialized... Waiting for state flush (Elapsed: ${counter}s)")
+                publish(if (isEn) "[INFO] ⏳ Baseband daemon initialized... Waiting for state flush (Elapsed: ${counter}s)" else "[INFO] ⏳ 基帶守護進程已初始化... 等待狀態刷新 (已耗時: ${counter}秒)")
             } else {
-                publish("[INFO] ⏳ Waiting for baseband hardware power-on... (Elapsed: ${counter}s)")
+                publish(if (isEn) "[INFO] ⏳ Waiting for baseband hardware power-on... (Elapsed: ${counter}s)" else "[INFO] ⏳ 等待基帶硬體上電... (已耗時: ${counter}秒)")
             }
         } else {
             // 8 秒過後，歷史假訊號已被徹底洗淨。此時檢查到的絕對是當前真實連線狀態！
             if (hasSystemSignal) {
-                publish("[INFO] ✅ Android System Telephony Registry is IN_SERVICE. (Locked at ${counter}s)")
+                publish(if (isEn) "[INFO] ✅ Android System Telephony Registry is IN_SERVICE. (Locked at ${counter}s)" else "[INFO] ✅ Android 系統通訊註冊表顯示已在服務中。(鎖定於 ${counter}秒)")
                 realSignalConfirmed = true
             } else {
-                publish("[INFO] ⏳ Waiting for network registration... (Elapsed: ${counter}s)")
+                publish(if (isEn) "[INFO] ⏳ Waiting for network registration... (Elapsed: ${counter}s)" else "[INFO] ⏳ 等待網路註冊... (已耗時: ${counter}秒)")
             }
         }
     }
 
     if (!realSignalConfirmed) {
-        publish("[WARN] ⚠️ Reached 90s safety timeout. The modem might be stuck or searching for network.")
+        publish(if (isEn) "[WARN] ⚠️ Reached 90s safety timeout. The modem might be stuck or searching for network." else "[警告] ⚠️ 已達到 90秒 安全超時。數據機可能卡住或正在搜索網路。")
     } else {
         // 訊號確定回來後，執行最終日誌打撈 (正向讀秒)
-        publish("[INFO] Capturing final UECAP handshakes & flushing logs...")
+        publish(if (isEn) "[INFO] Capturing final UECAP handshakes & flushing logs..." else "[INFO] 擷取最終 UECAP 握手並刷新日誌...")
         for (i in 1..5) {
-            publish("[INFO] ⏳ Finalizing baseband streams... (Elapsed: ${i}s / 5s)")
+            publish(if (isEn) "[INFO] ⏳ Finalizing baseband streams... (Elapsed: ${i}s / 5s)" else "[INFO] ⏳ 正在完成基帶串流... (已耗時: ${i}秒 / 5秒)")
             delay(1000)
         }
     }
 
     return realSignalConfirmed
+}
+
+@Composable
+fun ActiveConfigsScreen(isEn: Boolean, rootStatus: RootStatus) {
+    val context = LocalContext.current // 取得 Context 供寫入檔案使用
+    var systemStatus by remember { mutableStateOf(if (isEn) "Press Refresh to scan system..." else "點擊重新整理以掃描系統...") }
+    var isScanning by remember { mutableStateOf(false) }
+    val coroutineScope = rememberCoroutineScope()
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Button(
+            onClick = {
+                isScanning = true
+                // 確保雙語切換正常
+                systemStatus = if (isEn) "Scanning memory and mounts..." else "正在掃描記憶體與掛載點..."
+
+                coroutineScope.launch(Dispatchers.IO) {
+                    try {
+                        // 組合 Shell 腳本：極速版狀態掃描
+                        // 組合 Shell 腳本：精準除錯版
+                        val script = """
+                            echo "[ ⚙️ Shamp Baseband Daemon Status ]"
+                            PID=${'$'}(pidof shamp)
+                            if [ -z "${'$'}PID" ]; then
+                                echo "✅ Process exited normally (One-shot task completed)"
+                            else
+                                echo "⏳ Running (PID: ${'$'}PID) - Still parsing..."
+                            fi
+                            
+                            echo ""
+                            echo "[ 📜 Last Parsed Config (Fast Logcat) ]"
+                            # 🚀 將 tail -n 5 改為 tail -n 40，確保完整顯示所有檔案的讀取與 sent 紀錄
+                            logcat -d -t 10000 -e 'shamp|binarypb|uecapconfig|successfully sent' | tail -n 40 | sed 's/^/   /' || echo "   (No recent logcat records found)"
+                            
+                            echo ""
+                            echo "[ 📂 Baseband Temp Cache ]"
+                            ls -la /data/vendor/radio/modem_temp_file/ 2>/dev/null | grep -E '\.pb|\.binarypb' | awk '{print "   " ${'$'}9}' || echo "   (Empty cache)"
+                            
+                            echo ""
+                            echo "[ 🔗 Global Mounts & Versions (PID 1) ]"
+                            MOUNTS=${'$'}(nsenter -t 1 -m -- mount | grep 'uecapconfig' | awk '{print ${'$'}3}')
+                            if [ -z "${'$'}MOUNTS" ]; then
+                                echo "   No custom mounts found"
+                            else
+                                for f in ${'$'}MOUNTS; do
+                                    if [ -f "${'$'}f" ]; then
+                                        FILENAME=${'$'}(basename "${'$'}f")
+                                        echo "📄 ${'$'}FILENAME"
+                                        stat -c "   Size: %s bytes | Modified: %y" "${'$'}f" 2>/dev/null | cut -d'.' -f1
+                                        VERSION=${'$'}(strings "${'$'}f" 2>/dev/null | grep -iE '^[0-9]{4}-[0-9]{2}|v[0-9]+\.[0-9]+' | head -n 1)
+                                        if [ -n "${'$'}VERSION" ]; then
+                                            echo "   Version Tag: ${'$'}VERSION"
+                                        else
+                                            echo "   Version Tag: [Hidden/Encrypted]"
+                                        fi
+                                    fi
+                                done
+                            fi
+                        """.trimIndent()
+
+                        // 🚀 關鍵修復：直接用 Kotlin 原生 API 寫入腳本，徹底避開 Root Shell 的 EOF 阻塞與引號解析錯誤
+                        val scriptFile = File(context.cacheDir, "uecap_scan.sh")
+                        scriptFile.writeText(script)
+
+                        // 執行這個實體檔案
+                        val result = Shell.cmd("sh ${scriptFile.absolutePath}").exec()
+
+                        val output = buildString {
+                            if (result.out.isNotEmpty()) result.out.forEach { append(it).append("\n") }
+                            if (result.err.isNotEmpty()) {
+                                append("\n[Errors]\n")
+                                result.err.forEach { append(it).append("\n") }
+                            }
+                        }
+
+                        withContext(Dispatchers.Main) {
+                            systemStatus = output.ifBlank { if (isEn) "No output from system." else "系統沒有返回任何內容。" }
+                        }
+
+                    } catch (e: Exception) {
+                        withContext(Dispatchers.Main) {
+                            systemStatus = if (isEn) "Error occurred: ${e.message}" else "發生錯誤：${e.message}"
+                        }
+                    } finally {
+                        // 確保無論成功或報錯，轉圈圈一定會停止
+                        withContext(Dispatchers.Main) {
+                            isScanning = false
+                        }
+                    }
+                }
+            },
+            modifier = Modifier.fillMaxWidth(),
+            enabled = !isScanning && rootStatus == RootStatus.Granted
+        ) {
+            if (isScanning) {
+                CircularProgressIndicator(modifier = Modifier.size(20.dp), color = MaterialTheme.colorScheme.onPrimary)
+                Spacer(modifier = Modifier.width(8.dp))
+            }
+            Text(if (isEn) "Refresh System Status" else "重新整理系統狀態")
+        }
+
+        // 一鍵啟動 Pixel 官方 MDS 診斷工具 (包含進程防衝突機制與統一的按鈕樣式)
+        Button(
+            onClick = {
+                coroutineScope.launch(Dispatchers.IO) {
+                    // 1. 徹底獵殺舊進程，釋放底層 Socket 佔用
+                    Shell.cmd("killall vcd").exec()
+                    Shell.cmd("am force-stop com.google.mds").exec()
+                    delay(300) // 給予系統回收資源的時間
+
+                    // 2. 啟動全新的底層 VCD 診斷守護進程
+                    Shell.cmd("/vendor/bin/vcd &").exec()
+                    delay(500) // 等待 Socket 建立
+
+                    // 3. 冷啟動喚醒 MDS App
+                    Shell.cmd("am start -n com.google.mds/com.google.mds.startup.HomeActivity").exec()
+                }
+            },
+            modifier = Modifier.fillMaxWidth(),
+            enabled = rootStatus == RootStatus.Granted
+            // 💡 已經移除自訂 colors 參數，它現在會自動套用 MD3 的預設 Primary 顏色，與整體介面完美融合
+        ) {
+            Text(if (isEn) "Launch Pixel MDS (Hardware Diag)" else "啟動 Pixel 底層基帶診斷 (MDS)")
+        }
+
+        Card(
+            modifier = Modifier.fillMaxWidth().weight(1f),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(12.dp)
+                    .verticalScroll(rememberScrollState())
+            ) {
+                SelectionContainer {
+                    Text(
+                        text = systemStatus,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 13.sp,
+                        lineHeight = 18.sp,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+            }
+        }
+    }
 }

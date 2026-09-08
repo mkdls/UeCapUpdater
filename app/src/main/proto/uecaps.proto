@@ -1,0 +1,56 @@
+syntax = "proto3";
+
+option java_package = "com.pixelthings.uecapupdater";
+option java_outer_classname = "UeCapsProto";
+
+message uecaps {
+  uint32 version = 1;
+  optional int32 id = 2;
+  repeated ComboGroup ComboGroups = 3;
+  repeated ShannonFeatureSetDlPerCCNr dlFeaturePerCCList = 6;
+  repeated ShannonFeatureSetUlPerCCNr ulFeaturePerCCList = 7;
+  optional uint32 unknown = 9;
+}
+
+message ComboGroup {
+  message Nested1 {
+    optional uint32 bcsNr = 1;
+    optional uint32 bcsIntraEndc = 2;
+    optional uint32 bcsEutra = 3;
+    optional int32 powerClass = 4;
+    optional int32 intraBandEnDcSupport = 5;
+  }
+  message Nested2 {
+    message ComboFeatures {
+      int32 band = 1;
+      optional int32 bwClassDL = 2;
+      optional int32 bwClassUL = 3;
+      optional int32 dlFeatureIndex = 4;
+      optional int32 ulFeatureIndex = 5;
+      optional bytes dlFeaturePerCCIds = 6;
+      optional bytes ulFeaturePerCCIds = 7;
+      optional int32 srstxswitch = 8;
+    }
+    repeated ComboFeatures cc = 1;
+    int32 bitMask = 2;
+  }
+
+  Nested1 combo_header = 1;
+  repeated Nested2 combo = 2;
+}
+message ShannonFeatureSetDlPerCCNr {
+  optional int32 maxScs = 1;
+  optional int32 maxMimo = 2;
+  optional int32 maxBw = 3;
+  optional int32 maxModOrder = 4;
+  optional bool bw90MHzSupported = 5;
+}
+
+message ShannonFeatureSetUlPerCCNr {
+  optional int32 maxScs = 1;
+  optional int32 maxMimoCb = 2;
+  optional int32 maxBw = 3;
+  optional int32 maxModOrder = 4;
+  optional bool bw90MHzSupported = 5;
+  optional int32 maxMimoNonCb = 6;
+}

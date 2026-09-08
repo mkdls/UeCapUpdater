@@ -1,6 +1,10 @@
+// 🚀 關鍵修復 1：必須在檔案最頂端匯入 Protobuf 擴充函式庫，才能消除紅線並解決語法衝突
+import com.google.protobuf.gradle.*
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.protobuf)
 }
 
 android {
@@ -34,7 +38,10 @@ android {
         compose = true
     }
 
-    // 🛠️ 新增這段：用新版安全語法徹底停用測試單元
+    androidResources {
+        generateLocaleConfig = true
+    }
+
     testOptions {
         unitTests.isIncludeAndroidResources = false
     }
@@ -64,18 +71,28 @@ dependencies {
     implementation("androidx.compose.ui:ui-graphics")
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.material3:material3")
+    implementation("androidx.compose.material:material-icons-extended")
 
     // libsu 核心模組
     implementation("com.github.topjohnwu.libsu:core:$libsuVersion")
     implementation("androidx.appcompat:appcompat:1.6.1")
+
+    // 新增 Protobuf Java Lite (適合 Android 輕量化使用)
+    implementation("com.google.protobuf:protobuf-javalite:3.24.4")
 }
 
-android {
-    namespace = "com.pixelthings.uecapupdater"
-    // ... 其他設定保持不變
-
-    // 🚀 加入這段，讓系統自動產生語言設定檔
-    androidResources {
-        generateLocaleConfig = true
+protobuf {
+    protoc {
+        artifact = "com.google.protobuf:protoc:3.24.4"
+    }
+    generateProtoTasks {
+        all().forEach { task ->
+            task.builtins {
+                // 🚀 關鍵修復 2：有了最上方的 import 後，這裡就能安全使用 id() 且不會報錯了
+                id("java") {
+                    option("lite")
+                }
+            }
+        }
     }
 }

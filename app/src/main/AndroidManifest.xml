@@ -17,7 +17,8 @@
             android:exported="true"
             android:label="@string/app_name"
             android:theme="@style/Theme.ShannonConfigPro"
-            android:windowSoftInputMode="adjustResize">
+            android:windowSoftInputMode="adjustResize"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|smallestScreenSize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
 

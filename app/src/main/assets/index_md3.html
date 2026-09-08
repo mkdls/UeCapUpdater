@@ -1,0 +1,1882 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.5, maximum-scale=3.0, user-scalable=yes">
+    <meta name="color-scheme" content="light dark" />
+    <title>Pixel Uecapa pb Editor</title>
+    <script src="protobuf.min.js"></script>
+    <script src="jszip.min.js"></script>
+    <style>
+        :root {
+            --md-bg: #121212;
+            --md-surface: #1E1E1E;
+            --md-surface-variant: #2D2D2D;
+            --md-on-surface: #E3E3E3;
+            --md-on-surface-variant: #C4C7C5;
+            --md-outline: #44474E;
+            --md-primary: #A8C7FA;
+            --md-on-primary: #052D70;
+            --md-error: #FFB4AB;
+            --md-on-error: #690005;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            margin: 0; background-color: var(--md-bg); color: var(--md-on-surface);
+            -webkit-tap-highlight-color: transparent; font-size: 13px;
+        }
+
+        .container {
+            width: 100%;
+            min-width: max-content;
+            box-sizing: border-box;
+        }
+
+        .header {
+            display: flex;
+            align-items: center;
+            background-color: var(--md-surface);
+            width: 100%;
+            min-width: 100%;
+            padding: 10px 14px;
+            box-sizing: border-box;
+            border-bottom: 1px solid var(--md-outline);
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        .header > * {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        #tableContainer {
+            padding: 12px;
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        button {
+            background-color: var(--md-primary); color: var(--md-on-primary);
+            border: none; border-radius: 8px; padding: 6px 12px;
+            font-size: 12px; font-weight: 600; cursor: pointer;
+            transition: opacity 0.15s, transform 0.1s;
+        }
+        button:active { transform: scale(0.96); opacity: 0.85; }
+        button:disabled { opacity: 0.4; cursor: not-allowed; }
+        .btn-json, .btn-copy { background-color: var(--md-surface-variant); color: var(--md-on-surface); border: 1px solid var(--md-outline); }
+        .btn-rem { background-color: transparent; color: var(--md-error); border: 1px solid var(--md-error); }
+
+        select, input[type='text'], input[type='number'] {
+            background-color: var(--md-surface); color: var(--md-on-surface);
+            border: 1px solid var(--md-outline); border-radius: 6px;
+            padding: 5px 8px; font-size: 12px; outline: none; box-sizing: border-box;
+        }
+        select:focus, input[type='text']:focus, input[type='number']:focus { border-color: var(--md-primary); }
+
+        input[type="file"]::file-selector-button {
+            background-color: var(--md-surface-variant);
+            color: var(--md-on-surface);
+            border: 1px solid var(--md-outline);
+            border-radius: 8px;
+            padding: 6px 12px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            margin-right: 8px;
+            transition: opacity 0.15s, transform 0.1s;
+        }
+        input[type="file"]::file-selector-button:active {
+            transform: scale(0.96);
+            opacity: 0.85;
+        }
+
+        .binarypbInfo {
+            background-color: var(--md-surface);
+            padding: 12px 14px;
+            border-radius: 12px;
+            margin-bottom: 12px;
+            border: 1px solid var(--md-outline);
+            display: flex;
+            flex-direction: row;
+            gap: 12px;
+            align-items: center;
+            flex-wrap: wrap;
+            width: 100%;
+            box-sizing: border-box;
+        }
+        .binarypbInfo > * {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        #infoFeatureSets, #infoPatches { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+
+        table { border-collapse: separate; border-spacing: 0; width: 100%; }
+        .main-table th { text-align: left; padding: 6px 4px; color: var(--md-on-surface-variant); font-size: 12px; }
+        .main-table .combo-row {
+            display: block; background-color: var(--md-surface);
+            border: 1px solid var(--md-outline); border-radius: 12px;
+            margin-bottom: 10px; padding: 10px 12px; box-sizing: border-box;
+        }
+        .main-table .combo-row > td { border: none; padding: 0; display: block; width: 100%; }
+
+        .horizontal-scroll {
+            width: 100%; overflow-x: auto;
+            -webkit-overflow-scrolling: touch; padding-bottom: 8px;
+        }
+
+/* 🚀 Fix: Remove hardcoded widths, fully switch to adaptive width and prevent text wrapping */
+        .groupheader {
+            color: var(--md-on-surface-variant); font-size: 11px;
+            display: flex; align-items: center; gap: 8px; padding: 6px 10px;
+            background-color: var(--md-surface-variant); border-radius: 8px;
+            margin-bottom: 8px; width: max-content;
+        }
+        .groupheader span {
+            font-weight: 500;
+            white-space: nowrap;
+        }
+        .groupheader input[type="text"] {
+            min-width: 48px;
+            width: auto;
+            max-width: 180px;
+            padding: 3px 6px;
+            text-align: center;
+            field-sizing: content; /* Modern WebView auto-sizing by character count */
+        }
+/* 🚀 1. Fix powerClass unclickable: Remove max-content and nowrap, provide fixed safe width and touch optimization */
+        .groupheader select {
+            width: 110px;
+            min-height: 26px;
+            padding: 2px 6px;
+            font-size: 11px;
+            cursor: pointer;
+            position: relative;
+            z-index: 2;
+            touch-action: manipulation;
+        }
+
+        /* 🚀 2. Top Integrity input adaptive width */
+        #integrityField {
+            min-width: 60px;
+            width: auto;
+            max-width: 160px;
+            text-align: center;
+            field-sizing: content; /* Supports modern WebView auto-sizing by character count */
+            padding: 3px 6px;
+            font-size: 12px;
+        }
+
+        .combo-table {
+            width: max-content;
+            min-width: 100%;
+            border: none;
+            box-sizing: border-box;
+        }
+
+        .combo-table tr {
+            display: flex;
+            flex-wrap: nowrap;
+            align-items: center;
+            column-gap: 8px;
+            padding: 8px 6px;
+            border-bottom: 1px dashed var(--md-outline);
+            width: 100%;
+            box-sizing: border-box;
+        }
+        .combo-table tr:last-child { border-bottom: none; }
+
+        .combo-table td {
+            border: none;
+            padding: 0;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        /* Force band button column to not wrap, input and "↑ ↓ - +" fixed side-by-side */
+        .combo-table td:first-child {
+            min-width: 225px;
+            display: inline-flex !important;
+            flex-wrap: nowrap !important;
+            white-space: nowrap !important;
+            justify-content: flex-start;
+            align-items: center;
+            gap: 4px;
+            flex-shrink: 0;
+        }
+        .combo-table td:first-child button {
+            padding: 4px 8px;
+            min-width: 26px;
+            flex-shrink: 0;
+            white-space: nowrap;
+        }
+        .bandextraind { font-weight: bold; color: var(--md-on-surface-variant); }
+
+        .band-input {
+            width: 60px; min-width: 60px;
+            font-weight: bold; text-align: left; padding-left: 8px;
+            flex-shrink: 0;
+        }
+        .color-row {
+            background-color: var(--md-surface-variant) !important;
+            border-radius: 8px;
+        }
+
+        .main-table .buttons {
+            display: flex; flex-direction: row; gap: 8px;
+            margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--md-outline);
+        }
+        .main-table .buttons button { flex: 1; padding: 8px 0; font-size: 12px; }
+
+        textarea.json-box {
+            background-color: var(--md-bg); color: var(--md-on-surface);
+            padding: 12px; border-radius: 8px; font-family: monospace;
+            font-size: 12px; border: 1px solid var(--md-outline);
+            width: 100%; box-sizing: border-box; resize: none; line-height: 1.4;
+        }
+        /* 🚀 Force minimum height and flex rules to prevent text boxes from being squashed */
+        #jsonheaderOutput {
+            min-height: 90px;
+            flex-shrink: 0;
+        }
+        #jsonOutput {
+            min-height: 180px;
+            flex-grow: 1;
+            flex-shrink: 0;
+        }
+        textarea.json-box:focus { border-color: var(--md-primary); outline: none; }
+
+/* 🚀 1. Modal mask: Force full-screen Flex centering, support display:block dynamic overlay */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            width: 100vw; height: 100vh;
+            background-color: rgba(0, 0, 0, 0.65);
+            backdrop-filter: blur(4px);
+            z-index: 9999;
+            align-items: center;
+            justify-content: center;
+            padding: 16px;
+            box-sizing: border-box;
+        }
+        .modal[style*="display: block"],
+        .modal[style*="display: flex"] {
+            display: flex !important;
+        }
+
+        /* 🚀 2. General card container: Prevent collapsing and allow internal scrolling */
+        .modal-content {
+            background-color: var(--md-surface);
+            margin: auto;
+            padding: 24px;
+            border-radius: 20px;
+            width: 90%;
+            max-width: 520px;
+            border: 1px solid var(--md-outline);
+            box-sizing: border-box;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            max-height: 85vh;
+            min-height: 180px; /* Prevent "flat biscuit" on small messages */
+            overflow-y: auto; /* Enable scroll by default */
+            -webkit-overflow-scrolling: touch;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+        }
+
+        /* 🚀 3. Batch Gen exclusive frame: Fixed header/footer, scrollable body */
+        .batch-content {
+            max-width: 560px !important;
+            width: 94% !important;
+            height: 85vh !important; /* Force a stable height on mobile */
+            min-height: 480px !important;
+            overflow: hidden !important; /* Managed by .batch-form */
+            display: flex !important;
+        }
+
+        /* 🚀 4. Form internal scroll area: Only this part scrolls, buttons remain fixed */
+        .batch-form {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            width: 100%;
+            flex: 1 1 auto;
+            overflow-y: auto !important;
+            -webkit-overflow-scrolling: touch;
+            padding-right: 4px;
+            box-sizing: border-box;
+        }
+
+        .modal-content h3 {
+            flex-shrink: 0; /* Prevent title from being squashed */
+            margin: 0;
+            font-size: 18px;
+        }
+
+        .modal-content .modal-footer {
+            flex-shrink: 0; /* Prevent buttons from being squashed */
+            display: flex;
+            justify-content: flex-end;
+            gap: 12px;
+            margin-top: auto;
+            padding-top: 12px;
+        }
+
+        /* 🚀 5. JSON 編輯器專屬外框：強制最小高度，防止文字框坍塌 */
+        .json-content {
+            min-height: 480px !important;
+            width: 92% !important;
+            max-width: 520px !important;
+            display: flex !important;
+            flex-direction: column !important;
+            box-sizing: border-box !important;
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            width: 100%;
+            flex-shrink: 0;
+        }
+
+        .form-row {
+            display: flex;
+            gap: 8px;
+            width: 100%;
+            flex-shrink: 0;
+        }
+
+        .form-col {
+            flex: 1;
+            min-width: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .form-card {
+            background-color: var(--md-surface-variant);
+            padding: 10px;
+            border-radius: 8px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            width: 100%;
+            box-sizing: border-box;
+            flex-shrink: 0;
+        }
+
+        .form-card .form-col {
+            flex: 1 1 28%;
+            min-width: 80px;
+        }
+
+        .form-label {
+            font-size: 11px;
+            font-weight: 500;
+            color: var(--md-on-surface-variant);
+        }
+
+        .batch-content input[type="text"],
+        .batch-content input[type="number"],
+        .batch-content select {
+            width: 100% !important;
+            box-sizing: border-box !important;
+            height: 32px;
+            font-size: 12px;
+        }
+
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="header">
+        <input type="file" title="Load a .binarybp uecapability file from a Pixel" id="fileInput" accept=".binarypb" />
+        <button onclick="clearAllCombos()" class="btn-rem" id="clearAllBtn" style="display: none;">Clear All</button>
+        <button onclick="openBatchModal()" class="btn-primary" id="batchGenBtn" style="display: none;">Batch Gen</button>
+        <div id="bandFilter" style="display: none;">
+            <input type="text" id="bandFilterInput" placeholder="Filter e.g., 1+3+7c+n78c">
+            <button onclick="bandFilter=''; bandFilterInput.value=''; generateTable(decodedData);">Clear</button>
+        </div>
+        <div id="pagination"></div>
+        <div id="pageSizeSelector" style="display: none;">
+            <label for="pageSizeDropdown">Per page:</label>
+            <select id="pageSizeDropdown" onchange="changePageSize(this.value)">
+                <option value="20">20</option><option value="50">50</option><option value="100">100</option>
+            </select>
+        </div>
+        <div id="recompileBtn" style="display: none;">
+            <input type="text" id="filenameInput" value="" onchange="updateFilename(this.value)" style="width: 150px;">
+            <button title="Download the compiled binarypb file" onclick="dlProtobuf()">↓ .binarypb</button>
+            <button title="Download the generated Magisk zip"onclick="createZipWithSubdirectories()">↓ .zip</button>
+        </div>
+        <button id="clearLocalStorageBtn" title="Clear the stored session" onclick="clearLocalStorageAndReload()">Clear session</button>
+    </div>
+    <div id="tableContainer"></div>
+</div>
+
+<!-- Modal for showing raw JSON -->
+<div id="jsonModal" class="modal">
+    <div class="modal-content json-content">
+        <h3 style="margin: 0;">JSON / Raw Editor</h3>
+        <textarea id="jsonheaderOutput" class="json-box" spellcheck="false"></textarea>
+        <div id="fsdirbtn" style="display: flex; gap: 8px;">
+            <button style="flex: 1;" onclick="editFeatureSets(1)">Downlink</button>
+            <button style="flex: 1;" onclick="editFeatureSets(2)">Uplink</button>
+        </div>
+        <textarea id="jsonOutput" class="json-box" spellcheck="false"></textarea>
+        <div class="modal-footer">
+            <button class="btn-json" onclick="closeModal()">Cancel</button>
+            <button id="savebtn" class="btn-primary" onclick="closeModal()">Apply</button>
+        </div>
+    </div>
+</div>
+
+<!-- Modal for adding custom feature sets -->
+<div id="customFeatureModal" class="modal">
+    <div class="modal-content" style="min-height: 400px;">
+        <h3 style="margin:0;">Add Custom Feature Sets</h3>
+        <div style="display: flex; flex-direction: column; gap: 16px; overflow-y: auto; padding-right: 4px;">
+            <div style="background-color: var(--md-surface-variant); padding: 12px; border-radius: 12px; flex-shrink: 0;">
+                <h4 style="margin-top:0;">Downlink (DL)</h4>
+                <label class="form-label">Max SCS:</label>
+                <select id="dlMaxScs" style="width:100%; margin-bottom: 8px;"><option value="1">15kHz (1)</option><option value="2">30kHz (2)</option><option value="3">60kHz (3)</option><option value="4">120kHz (4)</option><option value="5">240kHz (5)</option></select>
+                <label class="form-label">Max MIMO:</label>
+                <select id="dlMaxMimo" style="width:100%; margin-bottom: 8px;"><option value="0">Not Supported</option><option value="1">2x2</option><option value="2">4x4</option><option value="3">8x8</option></select>
+                <label class="form-label">Max BW (MHz):</label>
+                <input type="number" id="dlMaxBw" value="100" min="0" max="1000" style="width:100%; box-sizing:border-box; margin-bottom: 8px;">
+                <label class="form-label">Max Mod Order:</label>
+                <select id="dlMaxModOrder" style="width:100%; margin-bottom: 8px;"><option value="0">Not Supported</option><option value="1">QAM64</option><option value="2">QAM256</option></select>
+                <label style="display:flex; align-items:center; gap:8px; font-size: 12px;">90MHz Support: <input type="checkbox" id="dlBw90MHz" style="width:20px; height:20px;"></label>
+                <button class="btn-primary" onclick="addCustomDlFeature()" style="margin-top: 12px; width: 100%;">Add DL Feature</button>
+            </div>
+            <div style="background-color: var(--md-surface-variant); padding: 12px; border-radius: 12px; flex-shrink: 0;">
+                <h4 style="margin-top:0;">Uplink (UL)</h4>
+                <label class="form-label">Max SCS:</label>
+                <select id="ulMaxScs" style="width:100%; margin-bottom: 8px;"><option value="1">15kHz (1)</option><option value="2">30kHz (2)</option><option value="3">60kHz (3)</option><option value="4">120kHz (4)</option><option value="5">240kHz (5)</option></select>
+                <label class="form-label">Max MIMO CB:</label>
+                <select id="ulMaxMimoCb" style="width:100%; margin-bottom: 8px;"><option value="0">Not Supported</option><option value="1">No</option><option value="2">Yes</option></select>
+                <label class="form-label">Max BW (MHz):</label>
+                <input type="number" id="ulMaxBw" value="100" min="0" max="1000" style="width:100%; box-sizing:border-box; margin-bottom: 8px;">
+                <label class="form-label">Max Mod Order:</label>
+                <select id="ulMaxModOrder" style="width:100%; margin-bottom: 8px;"><option value="0">Not Supported</option><option value="1">QAM64</option><option value="2">QAM256</option></select>
+                <label class="form-label">Max MIMO Non-CB:</label>
+                <input type="number" id="ulMaxMimoNonCb" value="0" min="0" max="10" style="width:100%; box-sizing:border-box; margin-bottom: 8px;">
+                <label style="display:flex; align-items:center; gap:8px; font-size: 12px;">90MHz Support: <input type="checkbox" id="ulBw90MHz" style="width:20px; height:20px;"></label>
+                <button class="btn-primary" onclick="addCustomUlFeature()" style="margin-top: 12px; width: 100%;">Add UL Feature</button>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn-json" onclick="closeCustomFeatureModal()">Close</button>
+        </div>
+    </div>
+</div>
+
+<!-- Generic MD3 Confirm Dialog -->
+<div id="confirmModal" class="modal">
+    <div class="modal-content" style="max-width: 340px; min-height: 200px;">
+        <h3 id="confirmTitle">Confirm</h3>
+        <p id="confirmMessage" style="margin: 0; color: var(--md-on-surface-variant); font-size: 14px; line-height: 1.5;"></p>
+        <div class="modal-footer">
+            <button id="confirmCancelBtn" class="btn-json" onclick="closeConfirmModal()">Cancel</button>
+            <button class="btn-primary" id="confirmOkBtn">Confirm</button>
+        </div>
+    </div>
+</div>
+
+<!-- Generic MD3 Alert Dialog -->
+<div id="alertModal" class="modal">
+    <div class="modal-content" style="max-width: 340px; min-height: 160px;">
+        <h3 id="alertTitle">Alert</h3>
+        <p id="alertMessage" style="margin: 0; color: var(--md-on-surface-variant); font-size: 14px; line-height: 1.5;"></p>
+        <div class="modal-footer">
+            <button class="btn-primary" onclick="closeAlertModal()">OK</button>
+        </div>
+    </div>
+</div>
+
+
+
+<script>
+    const protoDefinition = `
+        syntax = "proto3";
+        message uecaps {
+          uint32 version = 1;
+          optional int32 id = 2;
+          repeated ComboGroup ComboGroups = 3;
+          repeated ShannonFeatureSetDlPerCCNr dlFeaturePerCCList = 6;
+          repeated ShannonFeatureSetUlPerCCNr ulFeaturePerCCList = 7;
+          optional uint32 unknown = 9;
+        }
+        message ComboGroup {
+          message Nested1 {
+            optional uint32 bcsNr = 1;
+            optional uint32 bcsIntraEndc = 2;
+            optional uint32 bcsEutra = 3;
+            optional int32 powerClass = 4;
+            optional int32 intraBandEnDcSupport = 5;
+          }
+          message Nested2 {
+            message ComboFeatures {
+              int32 band = 1;
+              optional int32 bwClassDL = 2;
+              optional int32 bwClassUL = 3;
+              optional int32 dlFeatureIndex = 4;
+              optional int32 ulFeatureIndex = 5;
+              optional bytes dlFeaturePerCCIds = 6;
+              optional bytes ulFeaturePerCCIds = 7;
+              optional int32 srstxswitch = 8;
+            }
+            repeated ComboFeatures cc = 1;
+            int32 bitMask = 2;
+          }
+          Nested1 combo_header = 1;
+          repeated Nested2 combo = 2;
+        }
+        message ShannonFeatureSetDlPerCCNr {
+          optional int32 maxScs = 1;
+          optional int32 maxMimo = 2;
+          optional int32 maxBw = 3;
+          optional int32 maxModOrder = 4;
+          optional bool bw90MHzSupported = 5;
+        }
+        message ShannonFeatureSetUlPerCCNr {
+          optional int32 maxScs = 1;
+          optional int32 maxMimoCb = 2;
+          optional int32 maxBw = 3;
+          optional int32 maxModOrder = 4;
+          optional bool bw90MHzSupported = 5;
+          optional int32 maxMimoNonCb = 6;
+        }
+    `;
+
+    const root = protobuf.parse(protoDefinition).root;
+    const UeCaps = root.lookupType("uecaps");
+
+    function decodeBase64ToBytes(base64Str) {
+        const binaryString = atob(base64Str);
+        return new Uint8Array([...binaryString].map(char => char.charCodeAt(0)));
+    }
+
+    function processDecodedMessage(obj) {
+        for (let key in obj) {
+            if (typeof obj[key] === "string" && obj[key].match(/^[A-Za-z0-9+/=]+$/)) {
+                try { obj[key] = Array.from(decodeBase64ToBytes(obj[key])); } catch (e) {}
+            } else if (typeof obj[key] === "object" && obj[key] !== null) {
+                processDecodedMessage(obj[key]);
+            }
+        }
+    }
+
+    window.onmousedown = function(event) {
+        const jsonModal = document.getElementById('jsonModal');
+        const customFeatureModal = document.getElementById('customFeatureModal');
+        const batchGenModal = document.getElementById('batchGenModal');
+        const confirmModal = document.getElementById('confirmModal');
+        const alertModal = document.getElementById('alertModal');
+        if (event.target === jsonModal) closeModal();
+        else if (event.target === customFeatureModal) closeCustomFeatureModal();
+        else if (event.target === batchGenModal) closeBatchModal();
+        else if (event.target === confirmModal) closeConfirmModal();
+        else if (event.target === alertModal) closeAlertModal();
+    };
+
+    document.addEventListener("keydown", function(event) {
+        if (event.key === "Escape") {
+            closeModal();
+            closeCustomFeatureModal();
+            closeBatchModal();
+            closeConfirmModal();
+            closeAlertModal();
+        }
+    });
+
+    function showConfirm(title, message, callback) {
+        const modal = document.getElementById('confirmModal');
+        document.getElementById('confirmTitle').textContent = title;
+        document.getElementById('confirmMessage').textContent = message;
+        const okBtn = document.getElementById('confirmOkBtn');
+        const newOkBtn = okBtn.cloneNode(true);
+        okBtn.parentNode.replaceChild(newOkBtn, okBtn);
+        newOkBtn.onclick = function() {
+            modal.style.display = 'none';
+            callback();
+        };
+        modal.style.display = 'flex';
+    }
+
+    function closeConfirmModal() {
+        document.getElementById('confirmModal').style.display = 'none';
+    }
+
+    function showAlert(title, message) {
+        document.getElementById('alertTitle').textContent = title;
+        document.getElementById('alertMessage').textContent = message;
+        document.getElementById('alertModal').style.display = 'flex';
+    }
+
+    function closeAlertModal() {
+        document.getElementById('alertModal').style.display = 'none';
+    }
+
+    function getCookie(name) {
+        let match = document.cookie.match(new RegExp('(^| )' + name + '=([^;]+)'));
+        return match ? decodeURIComponent(match[2]) : null;
+    }
+
+    function integrityCookieStoreButtons() {
+        let html = "";
+        html += `<button title="Restore integrity and filename from cookies" id="restoreIntegrity" ${(!getCookie("storedintegrity")) ? `style="display: none"` : ""} onclick="restoreIntegrityCookie()">Restore</button>`;
+        html += `<button title="Save current integrity and filename to a cookie" onclick="saveIntegrityCookie()">Save</button>`;
+        return html;
+    }
+
+    function saveIntegrityCookie() {
+        if (typeof decodedData !== 'undefined' && decodedData.unknown) {
+            document.cookie = `storedfilename=${originalFilename}; Max-Age=31536000; path=/`;
+            document.cookie = `storedintegrity=${decodedData.unknown}; Max-Age=31536000; path=/`;
+            document.getElementById("restoreIntegrity").style.display = "unset";
+        }
+    }
+
+    function restoreIntegrityCookie() {
+        let integrity = getCookie("storedintegrity");
+        let filename = getCookie("storedfilename");
+        if (integrity) {
+            decodedData.unknown = integrity;
+            originalFilename = filename;
+            document.getElementById("integrityField").value = integrity;
+            document.getElementById("filenameInput").value = filename;
+        }
+    }
+
+    function copyCombo(realGroupIndex, localComboIndex) {
+        let groupToCopy = decodedData.ComboGroups[realGroupIndex];
+        let comboToCopy = groupToCopy.combo[localComboIndex];
+        let comboHeaderToCopy = groupToCopy.comboHeader;
+        let newComboHeader = JSON.parse(JSON.stringify(comboHeaderToCopy));
+        let newCombo = JSON.parse(JSON.stringify(comboToCopy));
+        newCombo.cc.forEach((ccItem) => {
+            if(ccItem.dlFeaturePerCCIds && typeof ccItem.dlFeaturePerCCIds === 'object') {
+                const dlValues = Object.values(ccItem.dlFeaturePerCCIds);
+                ccItem.dlFeaturePerCCIds = new Uint8Array(dlValues);
+            }
+            if(ccItem.ulFeaturePerCCIds && typeof ccItem.ulFeaturePerCCIds === 'object') {
+                const ulValues = Object.values(ccItem.ulFeaturePerCCIds);
+                ccItem.ulFeaturePerCCIds = new Uint8Array(ulValues);
+            }
+        });
+        decodedData.ComboGroups.unshift({ comboHeader: newComboHeader, combo: [newCombo] });
+        generateTable(decodedData);
+    }
+
+    function updateBand(realGroupIndex, localComboIndex, ccIndex, newValue) {
+        let oldBand = decodedData.ComboGroups[realGroupIndex].combo[localComboIndex].cc[ccIndex].band;
+        let newBandData = bandParseStr(newValue);
+        let newBand = newBandData.band;
+        let count = newBandData.bwClassDL;
+        let oldIsNR = oldBand > 10000;
+        let newIsNR = newBand > 10000;
+        let bandTypeChanged = oldIsNR !== newIsNR;
+        let ccItem = decodedData.ComboGroups[realGroupIndex].combo[localComboIndex].cc[ccIndex];
+        ccItem.band = Number(newBand);
+        ccItem.bwClassDL = count;
+        if (bandTypeChanged) {
+            delete ccItem.dlFeaturePerCCIds;
+            delete ccItem.ulFeaturePerCCIds;
+            ccItem.dlFeatureIndex = 0;
+            ccItem.ulFeatureIndex = 0;
+            ccItem.bwClassUL = 0;
+            if (newIsNR) {
+                ccItem.dlFeaturePerCCIds = new Uint8Array(0);
+                ccItem.ulFeaturePerCCIds = new Uint8Array(0);
+            }
+        }
+        generateTable(decodedData);
+    }
+
+    let currentPage = 1;
+    let rowsPerPage = 20;
+    let bandFilter = "";
+    let filteredGroups = [];
+    let globalIndexMap = [];
+
+    function changePageSize(newSize) {
+        rowsPerPage = parseInt(newSize, 10);
+        currentPage = 1;
+        generateTable(decodedData);
+    }
+
+    function generateTable(decodedData) {
+            filteredGroups = applyBandFilter(decodedData.ComboGroups);
+            let totalRows = filteredGroups.length;
+            let totalPages = Math.ceil(totalRows / rowsPerPage);
+            let start = (currentPage - 1) * rowsPerPage;
+            let end = start + rowsPerPage;
+
+// 🚀 Remove hardcoded style="width: 80px;", switch to dynamic size calculation and real-time input adaptation
+            let integrityVal = decodedData.unknown !== undefined ? decodedData.unknown : '';
+            let tableHTML = `<div class="binarypbInfo">
+                <span>ID: ${decodedData.id} | Ver: ${decodedData.version}</span>
+                <span>Integrity: <input type="text" id="integrityField" value="${integrityVal}" size="${Math.max(integrityVal.toString().length, 6)}" oninput="decodedData.unknown = this.value; this.size = Math.max(this.value.length, 6);">
+                ${integrityCookieStoreButtons()}</span>
+                <span id="infoFeatureSets">FeatureSets:
+                    <button title="Add custom DL/UL feature sets" class="btn-copy" onclick="showCustomFeatureModal()">Add</button>
+                    <button title="Edit available FeatureSets" class="btn-json" id="editFeatureSetsBtn" onclick="editFeatureSets(1)">JSON</button>
+                </span>
+                <span id="infoPatches">Patches:
+                    <button id="bitMaskToggleBtn" onclick="toggleBitMask()">Apply BM 65k patch</button>
+                    <button id="toggleIntegrityBtn" onclick="toggleIntegrity()">Integrity ${decodedData.hasOwnProperty('unknown') ? "OFF" : "ON"}</button>
+                </span>
+            </div>
+            <table class="main-table">
+                <tr>
+                    <th><button onclick="addNewComboToFirstGroup()">+ Add Combo</button> Filtered Combos: ${countCombos(filteredGroups)}/${countCombos(decodedData.ComboGroups)}</th>
+                </tr>`;
+
+            if (currentPage > totalPages) { currentPage = 1; start = 0; end = rowsPerPage; }
+
+            let paginatedGroups = filteredGroups.slice(start, end);
+            globalIndexMap = filteredGroups.map(group => decodedData.ComboGroups.indexOf(group));
+
+            paginatedGroups.forEach((group, localGroupIndex) => {
+                let realGroupIndex = globalIndexMap[start + localGroupIndex];
+
+                group.combo.forEach((combo, localComboIndex) => {
+let bcsNrVal = parseBcs(group.comboHeader.bcsNr);
+                    let bcsIntraVal = parseBcs(group.comboHeader.bcsIntraEndc);
+                    let bcsEutraVal = parseBcs(group.comboHeader.bcsEutra);
+                    let intraEndcVal = group.comboHeader.intraBandEnDcSupport !== undefined ? group.comboHeader.intraBandEnDcSupport : 0;
+
+                    let innerTableHTML = `<div class="horizontal-scroll">
+                        <div class="groupheader">
+                            <span>bcsNr:</span><input type="text" name="bcsNr" size="${Math.max(bcsNrVal.toString().length, 4)}" value="${bcsNrVal}" oninput="updateBcs(${realGroupIndex},this.value,'bcsNr'); this.size = Math.max(this.value.length, 4);">
+                            <span>bcsIntraEndc:</span><input type="text" name="bcsIntraEndc" size="${Math.max(bcsIntraVal.toString().length, 4)}" value="${bcsIntraVal}" oninput="updateBcs(${realGroupIndex},this.value,'bcsIntraEndc'); this.size = Math.max(this.value.length, 4);">
+                            <span>bcsEutra:</span><input type="text" name="bcsEutra" size="${Math.max(bcsEutraVal.toString().length, 4)}" value="${bcsEutraVal}" oninput="updateBcs(${realGroupIndex},this.value,'bcsEutra'); this.size = Math.max(this.value.length, 4);">
+                            <span>powerClass:</span>
+                            <select name="powerClass" onchange="updateComboHeader(${realGroupIndex},this.value,'powerClass')">
+                                <option value="0" ${Number(group.comboHeader.powerClass) === 0 ? "selected" : ""}>0 (Default)</option>
+                                <option value="1" ${Number(group.comboHeader.powerClass) === 1 ? "selected" : ""}>1 (Force PC2)</option>
+                            </select>
+                            <span>intraEndc:</span><input type="text" name="intraBandEnDcSupport" size="${Math.max(intraEndcVal.toString().length, 2)}" value="${intraEndcVal}" oninput="updateComboHeader(${realGroupIndex},this.value,'intraBandEnDcSupport'); this.size = Math.max(this.value.length, 2);">
+                        </div>
+                        <table class="combo-table">`;
+
+                    combo.cc.forEach((ccItem, ccIndex) => {
+                        let hasUlFeature = ccItem.ulFeaturePerCCIds && Object.keys(ccItem.ulFeaturePerCCIds).length > 0;
+                        let ran = (ccItem.band > 10000) ? 0 : 1;
+                        let rowClass = hasUlFeature ? "color-row" : "";
+
+                        let bandInput = `<input name="band-input" type="text" class="band-input" value="${bandParseInt(ccItem.bwClassDL,ccItem.band)}" onchange="updateBand(${realGroupIndex}, ${localComboIndex}, ${ccIndex}, this.value)" />`;
+
+                        let addBandBtn = ccIndex === combo.cc.length - 1 ? `<button class="btn-copy" onclick="addBand(${realGroupIndex}, ${localComboIndex})">+</button>` : "";
+                        let moveBandUpBtn = `<button class="btn-copy" title="Move band up" onclick="moveBand(${realGroupIndex}, ${localComboIndex}, ${ccIndex}, -1)" ${ccIndex === 0 ? "disabled" : ""}>↑</button>`;
+                        let moveBandDownBtn = `<button class="btn-copy" title="Move band down" onclick="moveBand(${realGroupIndex}, ${localComboIndex}, ${ccIndex}, 1)" ${ccIndex === combo.cc.length - 1 ? "disabled" : ""}>↓</button>`;
+                        let removeBandBtn = `<button class="btn-rem" onclick="removeBand(${realGroupIndex}, ${localComboIndex}, ${ccIndex})">-</button>`;
+
+                        // 🚀 Put + button in the same horizontal flex row as -, ensure alignment and no wrapping
+                        let dlFeaturePerCCIdsHTML = '<div style="display:flex; flex-direction:column; gap:6px; align-items:flex-start;">';
+                        let ulFeaturePerCCIdsHTML = '<div style="display:flex; flex-direction:column; gap:6px; align-items:flex-start;">';
+
+                        if (ran === 0) {
+                            // NR DL
+                            const dlKeys = Object.keys(ccItem.dlFeaturePerCCIds || {});
+                            if (dlKeys.length === 0) {
+                                dlFeaturePerCCIdsHTML += `<button class="btn-copy" onclick="addFeaturePerCCId(${realGroupIndex}, ${localComboIndex}, ${ccIndex}, 'dlFeaturePerCCIds', ${ran})">+</button>`;
+                            } else {
+                                dlKeys.forEach((key, index) => {
+                                    let value = ccItem.dlFeaturePerCCIds[key] || 0;
+                                    let isLast = (index === dlKeys.length - 1);
+                                    dlFeaturePerCCIdsHTML += `<div style="display:flex; gap:4px; align-items:center; white-space:nowrap;">
+                                        <select name="FeatureId" onchange="updateFeatureId(${realGroupIndex}, ${localComboIndex}, ${ccIndex}, 'dlFeaturePerCCIds.${key}', this.value, ${ran})">
+                                            ${createDropdownOptions(decodedData.dlFeaturePerCCList, value, ran)}
+                                        </select>
+                                        <button class="btn-rem" onclick="removeFeaturePerCCId(${realGroupIndex}, ${localComboIndex}, ${ccIndex}, 'dlFeaturePerCCIds', ${ran})">-</button>
+                                        ${isLast ? `<button class="btn-copy" onclick="addFeaturePerCCId(${realGroupIndex}, ${localComboIndex}, ${ccIndex}, 'dlFeaturePerCCIds', ${ran})">+</button>` : ''}
+                                    </div>`;
+                                });
+                            }
+                            dlFeaturePerCCIdsHTML += '</div>';
+
+                            // NR UL
+                            const ulKeys = (ccItem.ulFeaturePerCCIds && typeof ccItem.ulFeaturePerCCIds === "object") ? Object.keys(ccItem.ulFeaturePerCCIds) : [];
+                            if (ulKeys.length === 0) {
+                                ulFeaturePerCCIdsHTML += `<button class="btn-copy" onclick="addFeaturePerCCId(${realGroupIndex}, ${localComboIndex}, ${ccIndex}, 'ulFeaturePerCCIds', ${ran})">+</button>`;
+                            } else {
+                                ulKeys.forEach((key, index) => {
+                                    let value = ccItem.ulFeaturePerCCIds[key] || 0;
+                                    let isLast = (index === ulKeys.length - 1);
+                                    ulFeaturePerCCIdsHTML += `<div style="display:flex; gap:4px; align-items:center; white-space:nowrap;">
+                                        <select name="FeatureId" onchange="updateFeatureId(${realGroupIndex}, ${localComboIndex}, ${ccIndex}, 'ulFeaturePerCCIds.${key}', this.value, ${ran})">
+                                            ${createDropdownOptions(decodedData.ulFeaturePerCCList, value, ran)}
+                                        </select>
+                                        <button class="btn-rem" onclick="removeFeaturePerCCId(${realGroupIndex}, ${localComboIndex}, ${ccIndex}, 'ulFeaturePerCCIds', ${ran})">-</button>
+                                        ${isLast ? `<button class="btn-copy" onclick="addFeaturePerCCId(${realGroupIndex}, ${localComboIndex}, ${ccIndex}, 'ulFeaturePerCCIds', ${ran})">+</button>` : ''}
+                                    </div>`;
+                                });
+                            }
+                            ulFeaturePerCCIdsHTML += '</div>';
+                        } else if (ran === 1) {
+                            // LTE DL
+                            const dlKeys = Object.keys(ccItem.dlFeaturePerCCIds || {});
+                            let mimoList = ["None", "4x4", "2x2", "4+2", "2+2"];
+                            dlFeaturePerCCIdsHTML += '<div style="display:flex; gap:4px; align-items:center; white-space:nowrap;">';
+                            if (dlKeys.length > 0) {
+                                dlFeaturePerCCIdsHTML += `
+                                    <select name="FeatureId" onchange="updateFeatureId(${realGroupIndex}, ${localComboIndex}, ${ccIndex}, 0, this.value, ${ran})">
+                                        ${createDropdownOptions(mimoList, parseLteFeatureIndex({ FeatureIndex: ccItem.dlFeatureIndex, ran: ran }).mimo, ran)}
+                                    </select>
+                                    <button class="bwInd btn-copy">${String.fromCharCode(64 + ccItem.bwClassDL)}</button>
+                                    <button class="btn-rem" onclick="removeFeaturePerCCId(${realGroupIndex}, ${localComboIndex}, ${ccIndex}, 'dlFeaturePerCCIds', ${ran})">-</button>`;
+                            }
+                            dlFeaturePerCCIdsHTML += `<button class="btn-copy" onclick="addFeaturePerCCId(${realGroupIndex}, ${localComboIndex}, ${ccIndex}, 'dlFeaturePerCCIds', ${ran})">+</button></div></div>`;
+
+                            // LTE UL
+                            const ulKeys = Object.keys(ccItem.ulFeaturePerCCIds || {});
+                            ran = 2;
+                            let mimoListUl = ["None", "2x2", "1x1"];
+                            ulFeaturePerCCIdsHTML += '<div style="display:flex; gap:4px; align-items:center; white-space:nowrap;">';
+                            if (ulKeys.length > 0) {
+                                ulFeaturePerCCIdsHTML += `
+                                    <select name="FeatureId" onchange="updateFeatureId(${realGroupIndex}, ${localComboIndex}, ${ccIndex}, 1, this.value, ${ran})">
+                                        ${createDropdownOptions(mimoListUl, parseLteFeatureIndex({ FeatureIndex: ccItem.ulFeatureIndex, ran: ran }).mimo, ran)}
+                                    </select>
+                                    <button class="bwInd btn-copy">${String.fromCharCode(64 + ccItem.bwClassUL)}</button>
+                                    <button class="btn-rem" onclick="removeFeaturePerCCId(${realGroupIndex}, ${localComboIndex}, ${ccIndex}, 'ulFeaturePerCCIds', ${ran})">-</button>`;
+                            }
+                            ulFeaturePerCCIdsHTML += `<button class="btn-copy" onclick="addFeaturePerCCId(${realGroupIndex}, ${localComboIndex}, ${ccIndex}, 'ulFeaturePerCCIds', ${ran})">+</button></div></div>`;
+                        }
+
+                        innerTableHTML += `<tr class="${rowClass}">
+                            <td>${bandInput} ${moveBandUpBtn} ${moveBandDownBtn} ${removeBandBtn} ${addBandBtn}</td>
+                            <td class="bandextraind">${ccItem.bwClassDL}/${ccItem.bwClassUL}</td>
+                            <td class="bandextraind">${ccItem.dlFeatureIndex}/${ccItem.ulFeatureIndex}</td>
+                            <td><span class="groupheader" style="margin:0;">DL</span></td>
+                            <td style="white-space: normal;">${dlFeaturePerCCIdsHTML}</td>
+                            <td><span class="groupheader" style="margin:0;">UL</span></td>
+                            <td style="white-space: normal;">${ulFeaturePerCCIdsHTML}</td>
+                        </tr>`;
+                    });
+
+                    innerTableHTML += '</table></div>';
+
+                    tableHTML += `<tr class="combo-row">
+                        <td>${innerTableHTML}</td>
+                        <td class="buttons">
+                            <button title="Edit this combo in json" class="btn-json" onclick="showJSON(${realGroupIndex}, ${localComboIndex})">JSON</button>
+                            <button title="Copy this combo" class="btn-copy" onclick="copyCombo(${realGroupIndex}, ${localComboIndex})">Copy</button>
+                            <button title="Remove this combo" class="btn-rem" onclick="removeCombo(${realGroupIndex}, ${localComboIndex})">Remove</button>
+                        </td>
+                    </tr>`;
+                });
+            });
+
+        updatePaginationControls(totalPages);
+        tableHTML += `</table>`;
+        document.getElementById("tableContainer").innerHTML = tableHTML;
+        document.getElementById("recompileBtn").style.display = "flex";
+        document.getElementById("recompileBtn").style.gap = "8px";
+        document.getElementById("bandFilter").style.display = "flex";
+        document.getElementById("pageSizeSelector").style.display = "flex";
+        if (decodedData && decodedData.ComboGroups && decodedData.ComboGroups.length > 0) {
+            document.getElementById("clearAllBtn").style.display = "inline-block";
+        } else {
+            document.getElementById("clearAllBtn").style.display = "none";
+        }
+    }
+
+    function parseBcs(value) {
+        if ((value >>> 0) === 0xFFFFFFFF) return "All";
+        let binaryString = (value >>> 0).toString(2).padStart(32, '0');
+        const indexes = [];
+        for (let i = 0; i < binaryString.length; i++) {
+            if (binaryString[i] === "1") indexes.push(i);
+        }
+        return indexes;
+    }
+
+    function updateBcs(realGroupIndex, indexes, type, length = 32) {
+        if (typeof indexes === "string") {
+            if (indexes.trim().toLowerCase() === "all") {
+                decodedData.ComboGroups[realGroupIndex].comboHeader[type] = 0xFFFFFFFF;
+                return;
+            }
+            indexes = indexes.split(",").map(num => parseInt(num.trim(), 10));
+        }
+        if (!Array.isArray(indexes)) return null;
+        let binaryArray = new Array(length).fill("0");
+        indexes.forEach(index => { if (!isNaN(index) && index < length) binaryArray[index] = "1"; });
+        let value = parseInt(binaryArray.join(""), 2);
+        decodedData.ComboGroups[realGroupIndex].comboHeader[type] = value;
+    }
+
+    function updateComboHeader(realGroupIndex, value, field) {
+        let numValue = parseInt(value, 10);
+        if (isNaN(numValue)) numValue = 0;
+        decodedData.ComboGroups[realGroupIndex].comboHeader[field] = numValue;
+    }
+
+    const lteClassBBands = new Set([3, 5, 7, 8, 12, 27, 48, 66]);
+
+    function isAllowedLteClassB(featureObj) { return featureObj.band <= 10000 && lteClassBBands.has(Number(featureObj.band)); }
+
+    function parseLteFeatureIndex({ FeatureIndex = null, mimo = null, count = null, ran }) {
+        count === 3 && (count = 2);
+        if (FeatureIndex !== null) {
+            if (ran === 1) {
+                if (FeatureIndex === 0) return { mimo: 0, count: 0 };
+                count = Math.ceil(FeatureIndex / 2);
+                if (FeatureIndex === 5) mimo = 3;
+                else if (FeatureIndex === 6) mimo = 4;
+                else mimo = FeatureIndex % 2 === 0 ? 2 : 1;
+            } else if (ran === 2) {
+                mimo = (FeatureIndex === 1) ? 1 : 2;
+                count = (FeatureIndex === 0) ? 0 : count;
+            }
+        } else if (mimo !== null && count !== null) {
+            if (ran === 1) {
+                if (mimo === 0 && count === 0) return { FeatureIndex: 0 };
+                if (mimo === 3 && count === 2) return { FeatureIndex: 5 };
+                if (mimo === 4 && count === 2) return { FeatureIndex: 6 };
+                FeatureIndex = (count - 1) * 2 + (mimo === 2 ? 2 : 1);
+            } else if (ran === 2) {
+                (count > 0) ? FeatureIndex = mimo : FeatureIndex = 0;
+            }
+        } else { throw new Error("Invalid input."); }
+        return { FeatureIndex, mimo, count };
+    }
+
+    function countCombos(groups) { return groups.reduce((sum, group) => sum + group.combo.length, 0); }
+
+    function bandParseInt(bwClassDL, Band) {
+        let bwClass = "";
+        if (Band > 10000) Band = "n" + (Band - 10000);
+        if (bwClassDL > 0) bwClass = String.fromCharCode(64 + bwClassDL);
+        return Band+bwClass;
+    }
+
+    function bandParseStr(Band) {
+        let bandNum = Band.match(/\d+/);
+        let bwClass = Band.match(/[a-zA-Z]$/);
+        if (!bandNum) return Band;
+        bandNum = Number(bandNum[0]);
+        if (Band.startsWith("n")) bandNum += 10000;
+        let bwClassDL = bwClass ? bwClass[0].toUpperCase().charCodeAt(0) - 64 : 0;
+        return { band: bandNum, bwClassDL };
+    }
+
+    function addNewComboToFirstGroup() {
+        let newComboHeader = { "bcsNr": 0, "bcsIntraEndc": 0, "bcsEutra": 0, "powerClass": 0, "intraBandEnDcSupport": 0 };
+        let newCombo = { "cc": [{ "band": 10078, "bwClassDL": 0, "bwClassUL": 0, "dlFeatureIndex": 0, "ulFeatureIndex": 0, }], "bitMask": 0 };
+        decodedData.ComboGroups.unshift({ comboHeader: newComboHeader, combo: [newCombo] });
+        generateTable(decodedData);
+    }
+
+    function addBand(groupIndex, comboIndex) {
+        let newBand = { band: 10078, bwClassDL: 0, bwClassUL: 0, dlFeatureIndex: 0, ulFeatureIndex: 0, };
+        decodedData.ComboGroups[groupIndex].combo[comboIndex].cc.push(newBand);
+        generateTable(decodedData);
+    }
+
+    function moveBand(groupIndex, comboIndex, ccIndex, direction) {
+        const cc = decodedData.ComboGroups[groupIndex].combo[comboIndex].cc;
+        const targetIndex = ccIndex + direction;
+        if (targetIndex < 0 || targetIndex >= cc.length) return;
+        [cc[ccIndex], cc[targetIndex]] = [cc[targetIndex], cc[ccIndex]];
+        generateTable(decodedData);
+    }
+
+    function removeBand(realGroupIndex, localComboIndex, ccIndex) {
+        let combo = decodedData.ComboGroups[realGroupIndex].combo[localComboIndex];
+        if (combo.cc.length > 1) { combo.cc.splice(ccIndex, 1); } else { showAlert("Action Required", "At least one band must be present in the combo."); }
+        generateTable(decodedData);
+    }
+
+    document.getElementById("bandFilterInput").addEventListener("input", function() {
+        bandFilter = this.value.trim();
+        generateTable(decodedData);
+    });
+
+    function applyBandFilter(comboGroups) {
+        if (!bandFilter) return comboGroups;
+        bandFilter = bandFilter.replace(/\s+/g, "").replace(/\+$/, "");
+        let filterBands = bandFilter.split("+").map(band => bandParseStr(band));
+        if (filterBands.length === 0) return comboGroups;
+        return comboGroups.filter(group =>
+            group.combo.some(combo => {
+                return filterBands.every(filterBand =>
+                    combo.cc.some(ccItem =>
+                        ccItem.band === filterBand.band &&
+                        (filterBand.bwClassDL === 0 || ccItem.bwClassDL === filterBand.bwClassDL)
+                    )
+                );
+            })
+        );
+    }
+
+    function updatePaginationControls(totalPages) {
+        let paginationHTML = `
+            <button class="btn-copy" onclick="changePage(-1000)" ${currentPage === 1 ? "disabled" : ""}>«</button>
+            <button class="btn-copy" onclick="changePage(-1)" ${currentPage === 1 ? "disabled" : ""}>Prev</button>
+            <span>${currentPage}/${totalPages}</span>
+            <button class="btn-copy" onclick="changePage(1)" ${currentPage === totalPages ? "disabled" : ""}>Next</button>
+        `;
+        document.getElementById("pagination").innerHTML = paginationHTML;
+    }
+
+    function changePage(direction) {
+        let totalPages = Math.ceil(filteredGroups.length / rowsPerPage);
+        currentPage += direction;
+        if (currentPage < 1) currentPage = 1;
+        if (currentPage > totalPages) currentPage = totalPages;
+        generateTable(decodedData);
+        window.scrollTo({top: 0});
+    }
+
+    function createDropdownOptions(featureSetList, selectedValue, ran) {
+        let optionsHTML = '';
+        if (ran === 0) {
+            featureSetList.forEach((feature, index) => {
+            let selected = (index + 1 === selectedValue) ? "selected" : '';
+            const scsMapping = { 1: "15kHz", 2: "30kHz", 3: "60kHz", 4: "120kHz", 5: "240kHz" };
+            let scs = `${scsMapping[feature.maxScs] || "Unknown"}`;
+            const mimoMapping = { 0: "Not Supported", 1: "2x2", 2: "4x4", 3: "8x8" };
+            const mimoCbMapping = { 0: "Not Supported", 1: "No", 2: "Yes" };
+            let mimo;
+            if (feature.maxMimo !== undefined) mimo = `${mimoMapping[feature.maxMimo] || "Unknown"}`;
+            else if (feature.maxMimoCb !== undefined) mimo = `ULMIMO: ${mimoCbMapping[feature.maxMimoCb] || "Unknown"}`;
+            else mimo = "MIMO: Unknown";
+            let bw = `${feature.maxBw} MHz`;
+            const modMapping = { 0: "Not Supported", 1: "QAM64", 2: "QAM256" };
+            let mod = `${modMapping[feature.maxModOrder] || "Unknown"}`;
+            let ninety = `90MHz: ${feature.bw90MHzSupported ? "Y" : "N"}`;
+            optionsHTML += `<option value="${index + 1}" ${selected}>${index + 1}: ${scs}, ${mimo}, ${bw}, ${mod}, ${ninety}</option>`;
+        });
+        } else if (ran > 0) {
+            featureSetList.forEach((feature, index) => {
+                let selected = (index === selectedValue) ? "selected" : '';
+                let disabled = (index === 0) ? "selected disabled hidden" : '';
+                optionsHTML += `<option value="${index}" ${selected} ${disabled}>${feature}</option>`;
+            });
+        }
+        return optionsHTML;
+    }
+
+    function updateFeatureId(groupIndex, comboIndex, ccIndex, featureType, newValue, ran) {
+        let featureObj = decodedData.ComboGroups[groupIndex].combo[comboIndex].cc[ccIndex];
+        newValue = parseInt(newValue, 10);
+        if (ran === 0) {
+            const [feature, key] = featureType.split('.');
+            if (key !== undefined) {
+                if (!featureObj[feature]) featureObj[feature] = {};
+                featureObj[feature][key] = Math.max(newValue, 0);
+            } else { featureObj[featureType] = newValue; }
+        } else if (ran > 0) {
+            if (featureType === 0) {
+                FeatureIndex = parseLteFeatureIndex( {mimo: newValue, count: featureObj.bwClassDL, ran: 1}).FeatureIndex;
+                featureObj.dlFeatureIndex = FeatureIndex;
+            }
+            if (featureType === 1) {
+                FeatureIndex = parseLteFeatureIndex( {mimo: newValue, count: featureObj.bwClassUL, ran: 2}).FeatureIndex;
+                featureObj.ulFeatureIndex = FeatureIndex;
+            }
+        }
+        updateDependentValues(featureObj, ran);
+        generateTable(decodedData);
+    }
+
+    function calculateNrBandwidthClass(featureIds, featureList) {
+        const ids = featureIds ? Array.from(featureIds) : [];
+        const carrierCount = ids.length;
+        if (carrierCount === 0) return 0;
+        if (carrierCount === 1) return 1;
+        const features = ids.map(id => featureList?.[Number(id) - 1]).filter(Boolean);
+        const maxScs = Math.max(0, ...features.map(feature => Number(feature.maxScs) || 0));
+        if (maxScs < 4) {
+            const aggregateBandwidth = features.reduce((total, feature) => total + (Number(feature.maxBw) || 0), 0);
+            if (carrierCount === 2 && features.length === carrierCount && aggregateBandwidth > 20 && aggregateBandwidth <= 100) return 2;
+            return carrierCount + 1;
+        }
+        const maxCarrierBandwidth = Math.max(0, ...features.map(feature => Number(feature.maxBw) || 0));
+        if (maxCarrierBandwidth > 200) return ({ 2: 2, 3: 3 })[carrierCount] || 0;
+        if (maxCarrierBandwidth > 100) return ({ 2: 4, 3: 5, 4: 6, 5: 18, 6: 19, 7: 20, 8: 21 })[carrierCount] || 0;
+        return carrierCount <= 8 ? carrierCount + 5 : 0;
+    }
+
+    function findNrClassBCompanionFeatureId(featureId, featureList) {
+        const sourceFeature = featureList?.[Number(featureId) - 1];
+        if (!sourceFeature) return featureId;
+        const sourceBandwidth = Number(sourceFeature.maxBw) || 0;
+        const duplicatedBandwidth = sourceBandwidth * 2;
+        if (duplicatedBandwidth > 20 && duplicatedBandwidth <= 100) return featureId;
+        const candidates = featureList.map((feature, index) => ({ feature, featureId: index + 1 }))
+            .filter(({ feature }) => {
+                const aggregateBandwidth = sourceBandwidth + (Number(feature.maxBw) || 0);
+                return feature.maxScs === sourceFeature.maxScs && feature.maxMimo === sourceFeature.maxMimo && feature.maxModOrder === sourceFeature.maxModOrder && aggregateBandwidth > 20 && aggregateBandwidth <= 100;
+            }).sort((left, right) => {
+                const bandwidthDifference = Number(left.feature.maxBw) - Number(right.feature.maxBw);
+                return bandwidthDifference || left.featureId - right.featureId;
+            });
+        return candidates[0]?.featureId || featureId;
+    }
+
+    function updateDependentValues(featureObj, ran) {
+        const dlFeatureIds = featureObj.dlFeaturePerCCIds ? Array.from(featureObj.dlFeaturePerCCIds) : [];
+        const ulFeatureIds = featureObj.ulFeaturePerCCIds ? Array.from(featureObj.ulFeaturePerCCIds) : [];
+        let dlFeatureCount = dlFeatureIds.length;
+        let ulFeatureCount = ulFeatureIds.length;
+        let dlFeatureId = dlFeatureCount > 0 ? dlFeatureIds[0] : 0;
+        let ulFeatureId = ulFeatureCount > 0 ? ulFeatureIds[0] : 0;
+        let dlMaxScs = decodedData.dlFeaturePerCCList?.[dlFeatureId - 1]?.maxScs || 0;
+        let maxMimoCb = decodedData.ulFeaturePerCCList?.[ulFeatureId - 1]?.maxMimoCb || 0;
+        const useConsecutiveLteClasses = ran > 0 && isAllowedLteClassB(featureObj);
+        const calculatedDlClass = calculateNrBandwidthClass(dlFeatureIds, decodedData.dlFeaturePerCCList);
+        featureObj.bwClassDL = useConsecutiveLteClasses ? dlFeatureCount : calculatedDlClass;
+        const calculatedUlClass = calculateNrBandwidthClass(ulFeatureIds, decodedData.ulFeaturePerCCList);
+        const useConsecutiveLteUlClasses = useConsecutiveLteClasses && featureObj.bwClassDL === 2;
+        featureObj.bwClassUL = useConsecutiveLteUlClasses ? ulFeatureCount : calculatedUlClass;
+        if (dlMaxScs !== 0) {
+            featureObj.dlFeatureIndex = (dlMaxScs >= 4) ? 2 : 1;
+        } else {
+            featureObj.dlFeatureIndex = (dlFeatureCount > 0) ? 1 : 0;
+        }
+        if (dlFeatureCount === 0) featureObj.dlFeatureIndex = 0;
+
+        if (ran === 0) {
+            featureObj.ulFeatureIndex = (maxMimoCb === 2) ? 2 : (ulFeatureCount > 0 ? 1 : 0);
+        }
+        if (ran === 1) {
+            mimo = parseLteFeatureIndex( {FeatureIndex: featureObj.dlFeatureIndex, ran: 1}).mimo;
+            FeatureIndex = parseLteFeatureIndex( { mimo: mimo, count: featureObj.bwClassDL, ran: 1}).FeatureIndex;
+            featureObj.dlFeatureIndex = FeatureIndex;
+        } else if (ran === 2) {
+            mimo = parseLteFeatureIndex( {FeatureIndex: featureObj.ulFeatureIndex, ran: 2}).mimo;
+            FeatureIndex = parseLteFeatureIndex( { mimo: mimo, count: featureObj.bwClassUL, ran: 2}).FeatureIndex;
+            featureObj.ulFeatureIndex = FeatureIndex;
+        }
+    }
+
+    function addFeaturePerCCId(groupIndex, comboIndex, ccIndex, featureType, ran) {
+        let featureObj = decodedData.ComboGroups[groupIndex].combo[comboIndex].cc[ccIndex];
+        if (!featureObj[featureType] || !(featureObj[featureType] instanceof Uint8Array)) {
+            featureObj[featureType] = new Uint8Array(0);
+        }
+        let featureArray = Array.from(featureObj[featureType]);
+        if (featureArray.length === 0) {
+            if (ran === 0) featureArray.push(1);
+            else if (ran > 0) featureArray.push(0);
+        } else {
+            const lastValue = featureArray[featureArray.length - 1];
+            let nextValue = lastValue;
+            if (ran === 0 && featureType === 'dlFeaturePerCCIds' && featureArray.length === 1) {
+                nextValue = findNrClassBCompanionFeatureId(lastValue, decodedData.dlFeaturePerCCList);
+            }
+            featureArray.push(nextValue);
+        }
+        featureObj[featureType] = new Uint8Array(featureArray);
+        updateDependentValues(featureObj, ran);
+        generateTable(decodedData);
+    }
+
+    function removeFeaturePerCCId(groupIndex, comboIndex, ccIndex, featureType, ran) {
+        let featureObj = decodedData.ComboGroups[groupIndex].combo[comboIndex].cc[ccIndex];
+        if (!featureObj[featureType] || !(featureObj[featureType] instanceof Uint8Array)) return;
+        let featureArray = Array.from(featureObj[featureType]);
+        featureArray.pop();
+        featureObj[featureType] = featureArray.length > 0 ? new Uint8Array(featureArray) : undefined;
+        if (featureType === 'ulFeaturePerCCIds' && !featureObj[featureType]) delete featureObj.ulFeaturePerCCIds;
+        updateDependentValues(featureObj, ran);
+        generateTable(decodedData);
+    }
+
+    function removeCombo(realGroupIndex, localComboIndex) {
+        decodedData.ComboGroups[realGroupIndex].combo.splice(localComboIndex, 1);
+        if (decodedData.ComboGroups[realGroupIndex].combo.length === 0) decodedData.ComboGroups.splice(realGroupIndex, 1);
+        generateTable(decodedData);
+    }
+
+    let bitMaskToggled = false;
+    function toggleBitMask() {
+        bitMaskToggled = !bitMaskToggled;
+        decodedData.ComboGroups.forEach(group => {
+            group.combo.forEach(combo => {
+                if (combo.hasOwnProperty("bitMask")) combo.bitMask = bitMaskToggled ? 65535 : 0;
+            });
+        });
+        setTimeout(() => {
+            let button = document.getElementById("bitMaskToggleBtn");
+            if (button) button.textContent = bitMaskToggled ? "Apply BM 0 patch" : "Apply BM 65k patch";
+        }, 10);
+        generateTable(decodedData);
+    }
+
+    let integrityToggled = false;
+    function toggleIntegrity() {
+        integrityToggled = !integrityToggled;
+        if (decodedData.hasOwnProperty('unknown')) {
+            delete decodedData.unknown;
+        } else {
+            decodedData.unknown = 750569868;
+        }
+        setTimeout(() => {
+            let button = document.getElementById("toggleIntegrityBtn");
+            if (button) {
+                if (decodedData.hasOwnProperty('unknown')) button.textContent = "Integrity OFF";
+                else button.textContent = "Integrity ON";
+            }
+        }, 10);
+        generateTable(decodedData);
+    }
+
+    function cleanForJson(obj) {
+        if (obj === null || typeof obj !== 'object') return obj;
+        if (obj instanceof Uint8Array || (obj.constructor && obj.constructor.name === 'Uint8Array')) {
+            return Array.from(obj);
+        }
+        if (Array.isArray(obj)) {
+            return obj.map(cleanForJson);
+        }
+        const copy = {};
+        for (let key in obj) {
+            if (obj.hasOwnProperty(key)) {
+                copy[key] = cleanForJson(obj[key]);
+            }
+        }
+        return copy;
+    }
+
+    function editFeatureSets(direction) {
+        const container = document.getElementById('fsdirbtn');
+        const jOut = document.getElementById("jsonOutput");
+
+        if (direction === 1) {
+            container.firstElementChild.style.opacity = '';
+            container.children[1].style.opacity = '50%';
+            jOut.value = JSON.stringify(cleanForJson(decodedData.dlFeaturePerCCList), null, 2);
+        } else if (direction === 2) {
+            container.children[1].style.opacity = '';
+            container.firstElementChild.style.opacity = '50%';
+            jOut.value = JSON.stringify(cleanForJson(decodedData.ulFeaturePerCCList), null, 2);
+        }
+
+        document.getElementById("jsonheaderOutput").style.display = "none";
+        document.getElementById("fsdirbtn").style.display = "flex";
+        document.getElementById("jsonModal").style.display = "block";
+
+        document.getElementById("savebtn").onclick = function() {
+            try {
+                let editedFS = JSON.parse(jOut.value);
+                if (direction === 1) decodedData.dlFeaturePerCCList = editedFS;
+                else if (direction === 2) decodedData.ulFeaturePerCCList = editedFS;
+                document.getElementById("jsonModal").style.display = "none";
+                generateTable(decodedData);
+            } catch (e) { showAlert("Error", "Invalid JSON format"); }
+        }
+    }
+
+    function showJSON(realGroupIndex, localComboIndex) {
+        let group = decodedData.ComboGroups[realGroupIndex];
+        let combo = group.combo[localComboIndex];
+        let comboheader = group.comboHeader;
+
+        const jOut = document.getElementById("jsonOutput");
+        const jHOut = document.getElementById("jsonheaderOutput");
+
+        jOut.value = JSON.stringify(cleanForJson(combo), null, 2);
+        jHOut.value = JSON.stringify(cleanForJson(comboheader), null, 2);
+
+        jHOut.style.display = "block";
+        document.getElementById("fsdirbtn").style.display = "none";
+        document.getElementById("jsonModal").style.display = "block";
+
+        document.getElementById("savebtn").onclick = function() {
+            try {
+                let editedCombo = JSON.parse(jOut.value);
+                let editedComboHeader = JSON.parse(jHOut.value);
+                if (!editedCombo.cc) editedCombo.cc = [];
+                editedCombo.cc.forEach((ccItem) => {
+                    if (ccItem.dlFeaturePerCCIds && typeof ccItem.dlFeaturePerCCIds === 'object') {
+                        const dlValues = Object.values(ccItem.dlFeaturePerCCIds);
+                        ccItem.dlFeaturePerCCIds = new Uint8Array(dlValues);
+                    }
+                    if (ccItem.ulFeaturePerCCIds && typeof ccItem.ulFeaturePerCCIds === 'object') {
+                        const ulValues = Object.values(ccItem.ulFeaturePerCCIds);
+                        ccItem.ulFeaturePerCCIds = new Uint8Array(ulValues);
+                    }
+                });
+                group.combo[localComboIndex] = editedCombo;
+                group.comboHeader = editedComboHeader;
+                document.getElementById("jsonModal").style.display = "none";
+                generateTable(decodedData);
+            } catch (error) {
+                showAlert("Error", "Please ensure the JSON is valid.");
+            }
+        };
+    }
+
+    function closeModal() { document.getElementById("jsonModal").style.display = "none"; }
+    function showCustomFeatureModal() { document.getElementById("customFeatureModal").style.display = "block"; }
+    function closeCustomFeatureModal() { document.getElementById("customFeatureModal").style.display = "none"; }
+
+    function addCustomDlFeature() {
+        if (!decodedData.dlFeaturePerCCList) decodedData.dlFeaturePerCCList = [];
+        const newFeature = {
+            maxScs: parseInt(document.getElementById("dlMaxScs").value),
+            maxMimo: parseInt(document.getElementById("dlMaxMimo").value),
+            maxBw: parseInt(document.getElementById("dlMaxBw").value),
+            maxModOrder: parseInt(document.getElementById("dlMaxModOrder").value),
+            bw90MHzSupported: document.getElementById("dlBw90MHz").checked
+        };
+        decodedData.dlFeaturePerCCList.push(newFeature);
+        showAlert("Success", `DL Feature added! Index: ${decodedData.dlFeaturePerCCList.length}`);
+        generateTable(decodedData);
+    }
+
+    function addCustomUlFeature() {
+        if (!decodedData.ulFeaturePerCCList) decodedData.ulFeaturePerCCList = [];
+        const newFeature = {
+            maxScs: parseInt(document.getElementById("ulMaxScs").value),
+            maxMimoCb: parseInt(document.getElementById("ulMaxMimoCb").value),
+            maxBw: parseInt(document.getElementById("ulMaxBw").value),
+            maxModOrder: parseInt(document.getElementById("ulMaxModOrder").value),
+            bw90MHzSupported: document.getElementById("ulBw90MHz").checked,
+            maxMimoNonCb: parseInt(document.getElementById("ulMaxMimoNonCb").value)
+        };
+        decodedData.ulFeaturePerCCList.push(newFeature);
+        showAlert("Success", `UL Feature added! Index: ${decodedData.ulFeaturePerCCList.length}`);
+        generateTable(decodedData);
+    }
+
+    let decodedData;
+    let originalFilename;
+    document.getElementById('fileInput').addEventListener('change', function(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+        originalFilename = file.name.endsWith(".binarypb") ? file.name.slice(0, -9) : file.name;
+        document.getElementById("filenameInput").value = originalFilename || "default_filename";
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            const buffer = new Uint8Array(e.target.result);
+            try {
+                const decodedMessage = UeCaps.decode(buffer);
+                decodedData = UeCaps.toObject(decodedMessage, { defaults: true });
+                processDecodedMessage(decodedData);
+                generateTable(decodedData);
+            } catch (error) {
+                document.getElementById('tableContainer').innerHTML = "Error decoding file: " + error.message;
+            }
+        };
+        reader.readAsArrayBuffer(file);
+    });
+
+    function recompileProtobuf() {
+        if (!decodedData) { showAlert("Missing Data", "No data to recompile!"); return; }
+        const message = UeCaps.fromObject(decodedData);
+        const buffer = UeCaps.encode(message).finish();
+        return new Blob([buffer], { type: "application/octet-stream" });
+    }
+
+function dlProtobuf() {
+            if (!decodedData) { showAlert("Missing Data", "No data to recompile!"); return; }
+            const message = UeCaps.fromObject(decodedData);
+            const buffer = UeCaps.encode(message).finish();
+            const filename = `mod_${originalFilename}.binarypb`;
+
+            if (window.AndroidBridge) {
+                // 🚀 Inside Android App: Convert to Base64 and hand over to native layer to trigger "Save File" window
+                let binary = '';
+                for (let i = 0; i < buffer.byteLength; i++) {
+                    binary += String.fromCharCode(buffer[i]);
+                }
+                window.AndroidBridge.saveFile(btoa(binary), filename);
+            } else {
+                // Desktop browser fallback
+                const link = document.createElement("a");
+                link.href = URL.createObjectURL(new Blob([buffer], { type: "application/octet-stream" }));
+                link.download = filename;
+                link.click();
+            }
+        }
+
+    let clearSessionFlag = false;
+    function clearLocalStorageAndReload() {
+        clearSessionFlag = true;
+        localStorage.clear();
+        sessionStorage.clear();
+        location.reload();
+    }
+
+    function saveToLocalStorage() {
+        if (clearSessionFlag) { clearSessionFlag = false; return; }
+        const compressedBlob = recompileProtobuf();
+        const reader = new FileReader();
+        reader.onloadend = function() {
+            const base64String = reader.result.split(',')[1];
+            localStorage.setItem('protobufData', base64String);
+        };
+        reader.readAsDataURL(compressedBlob);
+        localStorage.setItem('fileName', originalFilename);
+    }
+
+    function loadFromLocalStorage() {
+        const base64String = localStorage.getItem('protobufData');
+        const fileName = localStorage.getItem('fileName');
+        if (!base64String) return;
+        const binaryString = atob(base64String);
+        const binaryArray = new Uint8Array(binaryString.length);
+        for (let i = 0; i < binaryString.length; i++) binaryArray[i] = binaryString.charCodeAt(i);
+        originalFilename = fileName;
+        document.getElementById("filenameInput").value = originalFilename || "default_filename";
+        try {
+            const decodedMessage = UeCaps.decode(binaryArray);
+            decodedData = UeCaps.toObject(decodedMessage, { defaults: true });
+            processDecodedMessage(decodedData);
+            generateTable(decodedData);
+        } catch (error) {}
+    }
+
+    window.addEventListener('beforeunload', function() { if (!clearSessionFlag) saveToLocalStorage(); });
+    window.addEventListener('load', function() { loadFromLocalStorage(); });
+    function updateFilename(newName) { originalFilename = newName; }
+
+    function getFormattedDate() {
+        const now = new Date();
+        return now.getFullYear() + '.' + String(now.getMonth() + 1).padStart(2, '0') + '.' +
+            String(now.getDate()).padStart(2, '0') + '.' + String(now.getHours()).padStart(2, '0') + '.' + String(now.getMinutes()).padStart(2, '0');
+    }
+
+async function createZipWithSubdirectories() {
+            let curr_time = getFormattedDate();
+            const zip = new JSZip();
+            const folder1 = zip.folder("META-INF/com/google/android");
+            const folder2 = zip.folder("system/vendor/firmware/uecapconfig");
+            const sampleBase64 = "IyEvc2Jpbi9zaAoKIyMjIyMjIyMjIyMjIyMjIyMKIyBJbml0aWFsaXphdGlvbgojIyMjIyMjIyMjIyMjIyMjIwoKdW1hc2sgMDIyCgojIGVjaG8gYmVmb3JlIGxvYWRpbmcgdXRpbF9mdW5jdGlvbnMKdWlfcHJpbnQoKSB7IGVjaG8gIiQxIjsgfQoKcmVxdWlyZV9uZXdfbWFnaXNrKCkgewogIHVpX3ByaW50ICIqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqIgogIHVpX3ByaW50ICIgUGxlYXNlIGluc3RhbGwgTWFnaXNrIHYyMC40KyEgIgogIHVpX3ByaW50ICIqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqIgogIGV4aXQgMQp9CgojIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjCiMgTG9hZCB1dGlsX2Z1bmN0aW9ucy5zaAojIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjCgpPVVRGRD0kMgpaSVBGSUxFPSQzCgptb3VudCAvZGF0YSAyPi9kZXYvbnVsbAoKWyAtZiAvZGF0YS9hZGIvbWFnaXNrL3V0aWxfZnVuY3Rpb25zLnNoIF0gfHwgcmVxdWlyZV9uZXdfbWFnaXNrCi4gL2RhdGEvYWRiL21hZ2lzay91dGlsX2Z1bmN0aW9ucy5zaApbICRNQUdJU0tfVkVSX0NPREUgLWx0IDIwNDAwIF0gJiYgcmVxdWlyZV9uZXdfbWFnaXNrCgppbnN0YWxsX21vZHVsZQpleGl0IDAK";
+            const customizesh_file = `set_perm_recursive $MODPATH 0 0 0755 0644\nchcon u:object_r:vendor_fw_file:s0 $MODPATH/system/vendor/firmware/uecapconfig/${originalFilename}.binarypb`;
+            const moduleprop_file = `id=PixelUecap\nname=Pixel Uecapa mod\nversion=${curr_time}\nversionCode=${(Date.now()).toString().slice(9)}\nauthor=pixel-pb\ndescription=Replaces ${originalFilename}. Generated with nxij.github.io/pixel-pb.`;
+            const binaryData = atob(sampleBase64);
+            const bytes = new Uint8Array(binaryData.length);
+            for (let i = 0; i < binaryData.length; i++) bytes[i] = binaryData.charCodeAt(i);
+
+            zip.file("customize.sh", customizesh_file, { unixPermissions: "644" });
+            zip.file("module.prop", moduleprop_file, { unixPermissions: "644" });
+            folder1.file("update-binary", bytes, { binary: true, unixPermissions: "644" });
+            folder1.file("updater-script", "#MAGISK", { unixPermissions: "644" });
+            folder2.file(`${originalFilename}.binarypb`, recompileProtobuf(), { unixPermissions: "644" });
+
+            try {
+                const filename = `${originalFilename}-${curr_time}.zip`;
+
+                if (window.AndroidBridge) {
+                    // 🚀 Inside Android App: Generate Base64 string directly from JSZip and pass to native layer
+                    const base64Data = await zip.generateAsync({ type: "base64", compression: "DEFLATE", compressionOptions: { level: 9 } });
+                    window.AndroidBridge.saveFile(base64Data, filename);
+                } else {
+                    const content = await zip.generateAsync({ type: "blob", platform: "UNIX", compression: "DEFLATE", compressionOptions: { level: 9 } });
+                    const url = URL.createObjectURL(content);
+                    const link = document.createElement('a');
+                    link.href = url;
+                    link.download = filename;
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                    URL.revokeObjectURL(url);
+                }
+                return true;
+            } catch (error) { return false; }
+        }
+
+// ==========================================
+        // 🚀 1. Clear all combinations logic
+        // ==========================================
+        function clearAllCombos() {
+            if (!decodedData) return;
+            showConfirm("Clear All", "Are you sure you want to clear all combinations? This cannot be undone.", () => {
+                decodedData.ComboGroups = [];
+                generateTable(decodedData);
+            });
+        }
+
+        // Modify original FileInput listener to ensure Batch button shows after loading file
+        document.getElementById('fileInput').addEventListener('change', function(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            originalFilename = file.name.endsWith(".binarypb") ? file.name.slice(0, -9) : file.name;
+            document.getElementById("filenameInput").value = originalFilename || "default_filename";
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const buffer = new Uint8Array(e.target.result);
+                try {
+                    const decodedMessage = UeCaps.decode(buffer);
+                    decodedData = UeCaps.toObject(decodedMessage, { defaults: true });
+                    processDecodedMessage(decodedData);
+                    document.getElementById("batchGenBtn").style.display = "block"; // Show batch generation button
+                    generateTable(decodedData);
+                } catch (error) {
+                    document.getElementById('tableContainer').innerHTML = "Error decoding file: " + error.message;
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        });
+
+        // ==========================================
+        // 🚀 2. Batch generation window and algorithm (Ported from Python)
+        // ==========================================
+let nrIndexCache = {}; // Cache user-entered DL/UL Index for each band
+
+        function openBatchModal() {
+            let modal = document.getElementById('batchGenModal');
+            modal.style.display = 'flex';
+            updateNrBandIndicesUI();
+        }
+        function closeBatchModal() { document.getElementById('batchGenModal').style.display = 'none'; }
+
+        // 3GPP Bandwidth Class to Max Carrier Count
+        function bwClassLetterToCc(letter) {
+            if (!letter) return 1;
+            const map = { 'A': 1, 'B': 2, 'C': 2, 'D': 3, 'E': 4, 'F': 5, 'G': 6, 'H': 7, 'I': 8 };
+            return map[letter.toUpperCase()] || 1;
+        }
+
+        // Parse strings like b3+b7C+b8A+n78C or comma-separated values
+        function parseBandPool(inputStr) {
+            if (!inputStr) return [];
+            let tokens = inputStr.split(/[+,\s;]+/).map(t => t.trim()).filter(Boolean);
+            let result = [];
+
+            for (let t of tokens) {
+                // Compatible with : syntax (e.g. 3:2)
+                if (t.includes(':')) {
+                    let [bPart, ccPart] = t.split(':');
+                    let bInfo = bandParseStr(bPart);
+                    if (bInfo.band > 0) result.push({ band: bInfo.band, maxCc: parseInt(ccPart) || 1 });
+                    continue;
+                }
+
+                let isNr = t.toLowerCase().startsWith('n');
+                let digits = t.match(/\d+/);
+                if (!digits) continue;
+                let bandNum = parseInt(digits[0]);
+                if (isNr || bandNum > 10000) {
+                    if (bandNum < 10000) bandNum += 10000;
+                }
+
+                // Extract trailing A/B/C/D/E class
+                let trailingLetter = t.match(/[a-zA-Z]$/);
+                let letter = trailingLetter ? trailingLetter[0].toUpperCase() : 'A';
+                let maxCc = bwClassLetterToCc(letter);
+
+                result.push({ band: bandNum, maxCc });
+            }
+
+            // Deduplicate by band and take max CC
+            let bandMap = new Map();
+            for (let item of result) {
+                if (bandMap.has(item.band)) {
+                    let existing = bandMap.get(item.band);
+                    existing.maxCc = Math.max(existing.maxCc, item.maxCc);
+                } else {
+                    bandMap.set(item.band, item);
+                }
+            }
+            return Array.from(bandMap.values());
+        }
+
+        // Dynamically render DL / UL Index inputs for NR bands when input bands change
+        function updateNrBandIndicesUI() {
+            let container = document.getElementById('batchNrIndicesList');
+            if (!container) return;
+
+            // Cache current values to prevent clearing on re-render
+            container.querySelectorAll('.nr-band-row').forEach(row => {
+                let b = row.dataset.band;
+                let dl = row.querySelector('.nr-dl-idx')?.value;
+                let ulNsa = row.querySelector('.nr-ul-nsa-idx')?.value;
+                let ulSa = row.querySelector('.nr-ul-sa-idx')?.value;
+                if (dl !== undefined && ulNsa !== undefined && ulSa !== undefined) {
+                    nrIndexCache[b] = { dl: parseInt(dl) || 1, ulNsa: parseInt(ulNsa) || 1, ulSa: parseInt(ulSa) || 1 };
+                }
+            });
+
+            let bands = parseBandPool(document.getElementById('batchBands').value);
+            let nrBands = bands.filter(d => d.band > 10000);
+
+            if (nrBands.length === 0) {
+                container.innerHTML = '<span style="font-size: 11px; color: var(--md-on-surface-variant);">Please enter NR bands above (e.g. n78C, n1A).</span>';
+                return;
+            }
+
+            let html = '';
+            for (let item of nrBands) {
+                let b = item.band;
+                let bName = 'n' + (b - 10000);
+                let saved = nrIndexCache[b] || { dl: 1, ulNsa: 1, ulSa: 1 };
+                html += `
+                <div class="nr-band-row" data-band="${b}" style="display: flex; align-items: center; justify-content: space-between; background-color: var(--md-surface); padding: 6px 10px; border-radius: 8px; border: 1px solid var(--md-outline);">
+                    <span style="font-weight: bold; min-width: 48px; color: var(--md-primary); font-size: 13px;">${bName}</span>
+                    <div style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">
+                        <label style="display: flex; align-items: center; gap: 4px; font-size: 11px;">
+                            <span>DL:</span>
+                            <input type="number" class="nr-dl-idx" value="${saved.dl}" min="1" max="255" style="width: 42px !important; height: 26px !important; padding: 2px 4px; text-align: center;">
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 4px; font-size: 11px;">
+                            <span>NSA UL:</span>
+                            <input type="number" class="nr-ul-nsa-idx" value="${saved.ulNsa}" min="0" max="255" style="width: 42px !important; height: 26px !important; padding: 2px 4px; text-align: center;">
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 4px; font-size: 11px;">
+                            <span>SA UL:</span>
+                            <input type="number" class="nr-ul-sa-idx" value="${saved.ulSa}" min="0" max="255" style="width: 42px !important; height: 26px !important; padding: 2px 4px; text-align: center;">
+                        </label>
+                    </div>
+                </div>`;
+            }
+            container.innerHTML = html;
+        }
+
+        function stringToBcs(str) {
+            if (!str || str.trim() === '') return 0;
+            if (str.trim().toLowerCase() === 'all') return 0xFFFFFFFF;
+            let arr = str.split(',').map(n => parseInt(n.trim())).filter(n => !isNaN(n));
+            let bin = Array(32).fill('0');
+            arr.forEach(i => { if (i < 32) bin[i] = '1'; });
+            return parseInt(bin.join(''), 2);
+        }
+
+        function getCombinations(array, size) {
+            let result = [];
+            function p(t, i) {
+                if (t.length === size) { result.push(t); return; }
+                if (i + 1 > array.length) return;
+                p(t.concat([array[i]]), i + 1);
+                p(t, i + 1);
+            }
+            p([], 0);
+            return result;
+        }
+
+        function cartesianProduct(arrays) {
+            return arrays.reduce((a, b) => a.flatMap(d => b.map(e => [d, e].flat())), [[]]);
+        }
+
+        function executeBatchGeneration() {
+            if (!decodedData) { showAlert("Load File", "Please load a .binarypb file first!"); return; }
+
+            let bandDefs = parseBandPool(document.getElementById("batchBands").value);
+            if (bandDefs.length === 0) { showAlert("Invalid Input", "Please enter at least one valid band!"); return; }
+
+            let maxTotal = parseInt(document.getElementById("batchMaxBands").value) || 4;
+            let maxLteCc = parseInt(document.getElementById("batchMaxLteCc").value) || 5;
+            let maxNrCc = parseInt(document.getElementById("batchMaxNrCc").value) || 5;
+            let anchorsInput = document.getElementById("batchAnchors").value.split(',').map(b => parseInt(b.trim())).filter(b => !isNaN(b));
+            let lteMimo = parseInt(document.getElementById("batchLteMimo").value) || 2;
+
+            // Extract specific Feature Indices for each NR band
+            let nrIndices = {};
+            document.querySelectorAll('.nr-band-row').forEach(row => {
+                let b = parseInt(row.dataset.band);
+                let dl = parseInt(row.querySelector('.nr-dl-idx')?.value) || 1;
+                let ulNsa = parseInt(row.querySelector('.nr-ul-nsa-idx')?.value) || 1;
+                let ulSa = parseInt(row.querySelector('.nr-ul-sa-idx')?.value) || 1;
+                nrIndices[b] = { dl, ulNsa, ulSa };
+                nrIndexCache[b] = { dl, ulNsa, ulSa };
+            });
+
+            let headerBcsNr = stringToBcs(document.getElementById("batchBcsNr").value);
+            let headerBcsIntra = stringToBcs(document.getElementById("batchBcsIntra").value);
+            let headerBcsEutra = stringToBcs(document.getElementById("batchBcsEutra").value);
+            let headerPowerC = parseInt(document.getElementById("batchPowerC").value) || 0;
+            let headerIntraEndc = parseInt(document.getElementById("batchIntraEndc").value) || 0;
+
+            let allowConflict = document.getElementById("batchAllowConflict").checked;
+            let restrictUl = document.getElementById("batchRestrictUl").checked;
+
+            const conflictPairs = [[1, 10001], [3, 10003], [7, 10007], [8, 10008], [28, 10028], [40, 10040], [41, 10041], [78, 10078], [42, 10078], [42, 10077]];
+            let newGroups = [];
+
+            for (let r = 1; r <= Math.min(maxTotal, bandDefs.length); r++) {
+                let combs = getCombinations(bandDefs, r);
+
+                for (let comb of combs) {
+                    let lteBands = comb.filter(d => d.band < 10000);
+                    let nrBands = comb.filter(d => d.band > 10000);
+                    if (nrBands.length === 0) continue;
+
+                    let mmwBands = nrBands.filter(d => [10257, 10258, 10260, 10261].includes(d.band));
+                    if (mmwBands.length > 1) continue;
+
+                    if (!allowConflict) {
+                        let conflict = false;
+                        let cBands = comb.map(d => d.band);
+                        for (let pair of conflictPairs) {
+                            if (cBands.includes(pair[0]) && cBands.includes(pair[1])) conflict = true;
+                        }
+                        if (conflict) continue;
+                    }
+
+                    if (lteBands.length > 0 && anchorsInput.length > 0) {
+                        let hasAnchor = lteBands.some(d => anchorsInput.includes(d.band));
+                        if (!hasAnchor) continue;
+                    }
+
+                    let ccOptions = comb.map(d => Array.from({length: d.maxCc}, (_, i) => i + 1));
+                    let ccProds = cartesianProduct(ccOptions);
+
+                    for (let ccArr of ccProds) {
+                        let totalLteCc = 0;
+                        let totalNrCc = 0;
+                        for (let i = 0; i < comb.length; i++) {
+                            if (comb[i].band < 10000) totalLteCc += ccArr[i];
+                            else totalNrCc += ccArr[i];
+                        }
+
+                        if (totalLteCc > maxLteCc || totalNrCc > maxNrCc) continue;
+
+                        let comboGroup = {
+                            comboHeader: {
+                                bcsNr: headerBcsNr,
+                                bcsIntraEndc: headerBcsIntra,
+                                bcsEutra: headerBcsEutra,
+                                powerClass: headerPowerC,
+                                intraBandEnDcSupport: headerIntraEndc
+                            },
+                            combo: [{ cc: [], bitMask: 0 }]
+                        };
+
+                        let ulLte = lteBands.length > 0 ? lteBands[0].band : null;
+                        let ulNr = nrBands.length > 0 ? nrBands[0].band : null;
+                        let isNsa = lteBands.length > 0;
+
+                        for (let i = 0; i < comb.length; i++) {
+                            let b = comb[i].band;
+                            let ccCount = ccArr[i];
+                            let isLTE = b < 10000;
+                            let hasUl = restrictUl ? (b === ulLte || b === ulNr) : true;
+
+                            let ccItem = { band: b, dlFeatureIndex: 0, ulFeatureIndex: 0 };
+
+                            if (isLTE) {
+                                ccItem.bwClassDL = {1:1, 2:3, 3:4, 4:5, 5:6}[ccCount] || ccCount;
+                                ccItem.bwClassUL = hasUl ? 1 : 0;
+                                ccItem.dlFeatureIndex = parseLteFeatureIndex({ mimo: lteMimo, count: ccCount, ran: 1 }).FeatureIndex;
+                                ccItem.ulFeatureIndex = hasUl ? parseLteFeatureIndex({ mimo: 1, count: 1, ran: 2 }).FeatureIndex : 0;
+                                ccItem.dlFeaturePerCCIds = new Uint8Array(Array(ccCount).fill(0));
+                                if (hasUl) ccItem.ulFeaturePerCCIds = new Uint8Array([0]);
+                                updateDependentValues(ccItem, 1);
+                            } else {
+                                let dlIdx = nrIndices[b]?.dl || 1;
+                                let ulIdx = isNsa ? (nrIndices[b]?.ulNsa || 1) : (nrIndices[b]?.ulSa || 1);
+                                ccItem.dlFeaturePerCCIds = new Uint8Array(Array(ccCount).fill(dlIdx));
+                                if (hasUl) ccItem.ulFeaturePerCCIds = new Uint8Array([ulIdx]);
+                                updateDependentValues(ccItem, 0); // Precisely calculate NR bandwidth class and Feature Index
+                            }
+                            comboGroup.combo[0].cc.push(ccItem);
+                        }
+                        newGroups.push(comboGroup);
+                    }
+                }
+            }
+
+            if (newGroups.length > 0) {
+                decodedData.ComboGroups = newGroups.concat(decodedData.ComboGroups || []);
+                generateTable(decodedData);
+                closeBatchModal();
+                showAlert("Batch Gen", `Successfully generated ${newGroups.length} combinations!`);
+            } else {
+                showAlert("Batch Gen", "No combinations generated due to constraints.");
+            }
+        }
+
+</script>
+<!-- Modal for Batch Combo Generation -->
+<div id="batchGenModal" class="modal">
+    <div class="modal-content batch-content">
+        <h3 style="margin:0;">Batch Combo Generation</h3>
+        <p style="font-size: 11px; color: var(--md-on-surface-variant); margin: 4px 0 12px 0;">
+            Supports 3GPP bandwidth classes (e.g. <b>b3+b7C+b8A+n78C+n79A</b>), defaults to A (1CC) if blank.
+        </p>
+
+        <div class="batch-form">
+            <!-- Row 1: Bands -->
+            <div class="form-group">
+                <span class="form-label">Band Pool (e.g. b3+b7C+b8A+n78C+n79A):</span>
+                <input type="text" id="batchBands" placeholder="b3+b7C+b8A+n78C+n79A" oninput="updateNrBandIndicesUI()" style="width: 100%;">
+            </div>
+
+            <!-- Row 2: Limits -->
+            <div class="form-row">
+                <div class="form-col">
+                    <span class="form-label">Max Bands:</span>
+                    <input type="number" id="batchMaxBands" value="4" min="1" max="8">
+                </div>
+                <div class="form-col">
+                    <span class="form-label">Max LTE CC:</span>
+                    <input type="number" id="batchMaxLteCc" value="5" min="1" max="8">
+                </div>
+                <div class="form-col">
+                    <span class="form-label">Max NR CC:</span>
+                    <input type="number" id="batchMaxNrCc" value="5" min="1" max="8">
+                </div>
+            </div>
+
+            <!-- Row 3: Anchors -->
+            <div class="form-group">
+                <span class="form-label">NSA Anchors (Optional LTE Bands):</span>
+                <input type="text" id="batchAnchors" placeholder="e.g. 1, 3, 7" style="width: 100%;">
+            </div>
+
+            <!-- Row 4: LTE MIMO & Dynamic NR Band Indices -->
+            <div class="form-card" style="flex-direction: column; gap: 8px;">
+                <div style="display: flex; align-items: center; justify-content: space-between; width: 100%;">
+                    <label style="display: flex; align-items: center; gap: 8px; font-size: 11px;">
+                        <span class="form-label" style="margin: 0;">LTE DL MIMO:</span>
+                        <select id="batchLteMimo" style="width: 90px !important; height: 28px !important;">
+                            <option value="2">4x4 (2)</option>
+                            <option value="1">2x2 (1)</option>
+                        </select>
+                    </label>
+                </div>
+                <div style="border-top: 1px dashed var(--md-outline); padding-top: 6px; width: 100%;">
+                    <span class="form-label" style="font-weight: 600; color: var(--md-primary);">NR Band Feature Index Configuration:</span>
+                    <div id="batchNrIndicesList" style="display: flex; flex-direction: column; gap: 6px; margin-top: 6px;">
+                        <span style="font-size: 11px; color: var(--md-on-surface-variant);">Please enter NR bands above (e.g. n78C, n1A).</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Row 5: Headers -->
+            <div class="form-card">
+                <div class="form-col"><span class="form-label">bcsNr:</span><input type="text" id="batchBcsNr" value="0,1,2"></div>
+                <div class="form-col"><span class="form-label">bcsIntra:</span><input type="text" id="batchBcsIntra" value=""></div>
+                <div class="form-col"><span class="form-label">bcsEutra:</span><input type="text" id="batchBcsEutra" value="0,1,2,3"></div>
+                <div class="form-col">
+                    <span class="form-label">powerClass:</span>
+                    <select id="batchPowerC"><option value="0">0 (Def)</option><option value="1">1 (PC2)</option></select>
+                </div>
+                <div class="form-col"><span class="form-label">intraEndc:</span><input type="number" id="batchIntraEndc" value="0"></div>
+            </div>
+
+            <!-- Row 6: Rules -->
+            <div class="form-group" style="gap: 8px;">
+                <label style="display:flex; align-items:center; gap:8px; font-size: 11px;">
+                    <input type="checkbox" id="batchAllowConflict"> Allow Conflicts (e.g. B3+n3, B42+n78)
+                </label>
+                <label style="display:flex; align-items:center; gap:8px; font-size: 11px;">
+                    <input type="checkbox" id="batchRestrictUl" checked> Restrict UL to Single Main Band
+                </label>
+            </div>
+        </div>
+
+        <div class="modal-footer">
+            <button class="btn-json" onclick="closeBatchModal()">Cancel</button>
+            <button class="btn-primary" onclick="executeBatchGeneration()">Generate</button>
+        </div>
+    </div>
+</div>
+</body>
+</html>
