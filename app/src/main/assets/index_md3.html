@@ -393,10 +393,44 @@
             font-size: 12px;
         }
 
+		/* 6. Welcome Screen */
+        #welcomeScreen {
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            height: 100vh; width: 100vw; background-color: var(--md-bg);
+            position: fixed; top: 0; left: 0; z-index: 5000;
+        }
+        .welcome-card {
+            background-color: var(--md-surface); padding: 40px 32px; border-radius: 24px;
+            border: 1px solid var(--md-outline); text-align: center;
+            max-width: 400px; width: 90%; box-shadow: 0 8px 32px rgba(0,0,0,0.4); box-sizing: border-box;
+        }
+        .welcome-card h2 { margin-top: 0; color: var(--md-primary); font-size: 22px; margin-bottom: 12px; }
+        .welcome-card p { color: var(--md-on-surface-variant); font-size: 13px; line-height: 1.5; margin-bottom: 24px; }
+        .welcome-btn {
+            display: block; width: 100%; box-sizing: border-box; padding: 12px; border-radius: 12px;
+            font-size: 14px; font-weight: 600; margin-bottom: 12px; text-align: center; cursor: pointer;
+            transition: opacity 0.15s, transform 0.1s;
+        }
+        .welcome-btn:active { transform: scale(0.96); opacity: 0.85; }
+        .btn-w-primary { background-color: var(--md-primary); color: var(--md-on-primary); border: none; }
+        .btn-w-secondary { background-color: transparent; color: var(--md-on-surface); border: 1px solid var(--md-outline); }
     </style>
 </head>
 <body>
-<div class="container">
+
+<!-- Initial Welcome Screen -->
+<div id="welcomeScreen">
+    <div class="welcome-card">
+        <h2>Uecapa pb Editor</h2>
+        <p>Select a .binarypb file to edit capabilities, or restore your previous unsaved session.</p>
+        <!-- Trigger file upload in the main interface via label -->
+        <label for="fileInput" class="welcome-btn btn-w-primary">Select .binarypb File</label>
+        <button id="welcomeRestoreBtn" class="welcome-btn btn-w-secondary" style="display: none;" onclick="restoreSession()">Restore Previous Session</button>
+    </div>
+</div>
+
+<!-- Main Interface (Hidden by default) -->
+<div class="container" id="mainUI" style="display: none;">
     <div class="header">
         <input type="file" title="Load a .binarybp uecapability file from a Pixel" id="fileInput" accept=".binarypb" />
         <button onclick="clearAllCombos()" class="btn-rem" id="clearAllBtn" style="display: none;">Clear All</button>
@@ -503,6 +537,11 @@
 </div>
 
 <script>
+    window.onerror = function(msg, url, lineNo, columnNo, error) {
+        console.error(msg, url, lineNo, columnNo, error);
+        return false;
+    };
+
     const protoDefinition = `
         syntax = "proto3";
         message uecaps {
@@ -713,13 +752,14 @@
     }
 
     function generateTable(decodedData) {
+        try {
+            if (!decodedData || !decodedData.ComboGroups) return;
             filteredGroups = applyBandFilter(decodedData.ComboGroups);
             let totalRows = filteredGroups.length;
             let totalPages = Math.ceil(totalRows / rowsPerPage);
             let start = (currentPage - 1) * rowsPerPage;
             let end = start + rowsPerPage;
 
-            /* Remove hardcoded style="width: 80px;", switch to dynamic size calculation and real-time input adaptation */
             let integrityVal = decodedData.unknown !== undefined ? decodedData.unknown : '';
             let tableHTML = `<div class="binarypbInfo">
                 <span>ID: ${decodedData.id} | Ver: ${decodedData.version}</span>
@@ -779,12 +819,10 @@
                         let moveBandDownBtn = `<button class="btn-copy" title="Move band down" onclick="moveBand(${realGroupIndex}, ${localComboIndex}, ${ccIndex}, 1)" ${ccIndex === combo.cc.length - 1 ? "disabled" : ""}>↓</button>`;
                         let removeBandBtn = `<button class="btn-rem" onclick="removeBand(${realGroupIndex}, ${localComboIndex}, ${ccIndex})">-</button>`;
 
-                        /* Put + button in the same horizontal flex row as -, ensure alignment and no wrapping */
                         let dlFeaturePerCCIdsHTML = '<div style="display:flex; flex-direction:column; gap:6px; align-items:flex-start;">';
                         let ulFeaturePerCCIdsHTML = '<div style="display:flex; flex-direction:column; gap:6px; align-items:flex-start;">';
 
                         if (ran === 0) {
-                            // NR DL
                             const dlKeys = Object.keys(ccItem.dlFeaturePerCCIds || {});
                             if (dlKeys.length === 0) {
                                 dlFeaturePerCCIdsHTML += `<button class="btn-copy" onclick="addFeaturePerCCId(${realGroupIndex}, ${localComboIndex}, ${ccIndex}, 'dlFeaturePerCCIds', ${ran})">+</button>`;
@@ -803,7 +841,6 @@
                             }
                             dlFeaturePerCCIdsHTML += '</div>';
 
-                            // NR UL
                             const ulKeys = (ccItem.ulFeaturePerCCIds && typeof ccItem.ulFeaturePerCCIds === "object") ? Object.keys(ccItem.ulFeaturePerCCIds) : [];
                             if (ulKeys.length === 0) {
                                 ulFeaturePerCCIdsHTML += `<button class="btn-copy" onclick="addFeaturePerCCId(${realGroupIndex}, ${localComboIndex}, ${ccIndex}, 'ulFeaturePerCCIds', ${ran})">+</button>`;
@@ -822,7 +859,6 @@
                             }
                             ulFeaturePerCCIdsHTML += '</div>';
                         } else if (ran === 1) {
-                            // LTE DL
                             const dlKeys = Object.keys(ccItem.dlFeaturePerCCIds || {});
                             let mimoList = ["None", "4x4", "2x2", "4+2", "2+2"];
                             dlFeaturePerCCIdsHTML += '<div style="display:flex; gap:4px; align-items:center; white-space:nowrap;">';
@@ -836,20 +872,18 @@
                             }
                             dlFeaturePerCCIdsHTML += `<button class="btn-copy" onclick="addFeaturePerCCId(${realGroupIndex}, ${localComboIndex}, ${ccIndex}, 'dlFeaturePerCCIds', ${ran})">+</button></div></div>`;
 
-                            // LTE UL
                             const ulKeys = Object.keys(ccItem.ulFeaturePerCCIds || {});
-                            ran = 2;
                             let mimoListUl = ["None", "2x2", "1x1"];
                             ulFeaturePerCCIdsHTML += '<div style="display:flex; gap:4px; align-items:center; white-space:nowrap;">';
                             if (ulKeys.length > 0) {
                                 ulFeaturePerCCIdsHTML += `
-                                    <select name="FeatureId" onchange="updateFeatureId(${realGroupIndex}, ${localComboIndex}, ${ccIndex}, 1, this.value, ${ran})">
-                                        ${createDropdownOptions(mimoListUl, parseLteFeatureIndex({ FeatureIndex: ccItem.ulFeatureIndex, ran: ran }).mimo, ran)}
+                                    <select name="FeatureId" onchange="updateFeatureId(${realGroupIndex}, ${localComboIndex}, ${ccIndex}, 1, this.value, 2)">
+                                        ${createDropdownOptions(mimoListUl, parseLteFeatureIndex({ FeatureIndex: ccItem.ulFeatureIndex, ran: 2 }).mimo, 2)}
                                     </select>
                                     <button class="bwInd btn-copy">${String.fromCharCode(64 + ccItem.bwClassUL)}</button>
-                                    <button class="btn-rem" onclick="removeFeaturePerCCId(${realGroupIndex}, ${localComboIndex}, ${ccIndex}, 'ulFeaturePerCCIds', ${ran})">-</button>`;
+                                    <button class="btn-rem" onclick="removeFeaturePerCCId(${realGroupIndex}, ${localComboIndex}, ${ccIndex}, 'ulFeaturePerCCIds', 1)">-</button>`;
                             }
-                            ulFeaturePerCCIdsHTML += `<button class="btn-copy" onclick="addFeaturePerCCId(${realGroupIndex}, ${localComboIndex}, ${ccIndex}, 'ulFeaturePerCCIds', ${ran})">+</button></div></div>`;
+                            ulFeaturePerCCIdsHTML += `<button class="btn-copy" onclick="addFeaturePerCCId(${realGroupIndex}, ${localComboIndex}, ${ccIndex}, 'ulFeaturePerCCIds', 1)">+</button></div></div>`;
                         }
 
                         innerTableHTML += `<tr class="${rowClass}">
@@ -876,18 +910,14 @@
                 });
             });
 
-        updatePaginationControls(totalPages);
-        tableHTML += `</table>`;
-        document.getElementById("tableContainer").innerHTML = tableHTML;
-        document.getElementById("recompileBtn").style.display = "flex";
-        document.getElementById("recompileBtn").style.gap = "8px";
-        document.getElementById("bandFilter").style.display = "flex";
-        document.getElementById("pageSizeSelector").style.display = "flex";
-        if (decodedData && decodedData.ComboGroups && decodedData.ComboGroups.length > 0) {
-            document.getElementById("clearAllBtn").style.display = "inline-block";
-        } else {
-            document.getElementById("clearAllBtn").style.display = "none";
-        }
+            updatePaginationControls(totalPages);
+            tableHTML += `</table>`;
+            document.getElementById("tableContainer").innerHTML = tableHTML;
+            document.getElementById("recompileBtn").style.display = "flex";
+            document.getElementById("bandFilter").style.display = "flex";
+            document.getElementById("pageSizeSelector").style.display = "flex";
+            document.getElementById("clearAllBtn").style.display = (decodedData.ComboGroups.length > 0) ? "inline-block" : "none";
+        } catch (e) { console.error(e); }
     }
 
     function parseBcs(value) {
@@ -961,11 +991,12 @@
     }
 
     function bandParseStr(Band) {
+        if (typeof Band !== 'string') return { band: 0, bwClassDL: 0 };
         let bandNum = Band.match(/\d+/);
         let bwClass = Band.match(/[a-zA-Z]$/);
-        if (!bandNum) return Band;
+        if (!bandNum) return { band: 0, bwClassDL: 0 };
         bandNum = Number(bandNum[0]);
-        if (Band.startsWith("n")) bandNum += 10000;
+        if (Band.toLowerCase().startsWith("n")) bandNum += 10000;
         let bwClassDL = bwClass ? bwClass[0].toUpperCase().charCodeAt(0) - 64 : 0;
         return { band: bandNum, bwClassDL };
     }
@@ -1003,20 +1034,23 @@
     });
 
     function applyBandFilter(comboGroups) {
-        if (!bandFilter) return comboGroups;
-        bandFilter = bandFilter.replace(/\s+/g, "").replace(/\+$/, "");
-        let filterBands = bandFilter.split("+").map(band => bandParseStr(band));
-        if (filterBands.length === 0) return comboGroups;
-        return comboGroups.filter(group =>
-            group.combo.some(combo => {
-                return filterBands.every(filterBand =>
-                    combo.cc.some(ccItem =>
-                        ccItem.band === filterBand.band &&
-                        (filterBand.bwClassDL === 0 || ccItem.bwClassDL === filterBand.bwClassDL)
-                    )
-                );
-            })
-        );
+        try {
+            if (!bandFilter || typeof bandFilter !== 'string') return comboGroups;
+            let filterText = bandFilter.replace(/\s+/g, "").replace(/\+$/, "");
+            if (!filterText) return comboGroups;
+            let filterBands = filterText.split("+").map(band => bandParseStr(band)).filter(b => b && b.band);
+            if (filterBands.length === 0) return comboGroups;
+            return comboGroups.filter(group =>
+                group.combo.some(combo => {
+                    return filterBands.every(filterBand =>
+                        combo.cc.some(ccItem =>
+                            ccItem.band === filterBand.band &&
+                            (filterBand.bwClassDL === 0 || ccItem.bwClassDL === filterBand.bwClassDL)
+                        )
+                    );
+                })
+            );
+        } catch (e) { console.error(e); return comboGroups; }
     }
 
     function updatePaginationControls(totalPages) {
@@ -1387,12 +1421,19 @@
         reader.onload = function(e) {
             const buffer = new Uint8Array(e.target.result);
             try {
+                // After successfully selecting the file, hide the initial screen and show the main interface
+                document.getElementById('welcomeScreen').style.display = 'none';
+                document.getElementById('mainUI').style.display = 'block';
+
                 const decodedMessage = UeCaps.decode(buffer);
                 decodedData = UeCaps.toObject(decodedMessage, { defaults: true });
                 processDecodedMessage(decodedData);
                 document.getElementById("batchGenBtn").style.display = "block";
                 generateTable(decodedData);
+                showAlert("Success", "File decoded successfully!");
             } catch (error) {
+                document.getElementById('welcomeScreen').style.display = 'none';
+                document.getElementById('mainUI').style.display = 'block';
                 document.getElementById('tableContainer').innerHTML = "Error decoding file: " + error.message;
             }
         };
@@ -1413,14 +1454,12 @@
             const filename = `mod_${originalFilename}.binarypb`;
 
             if (window.AndroidBridge) {
-                /* Inside Android App: Convert to Base64 and hand over to native layer to trigger "Save File" window */
                 let binary = '';
                 for (let i = 0; i < buffer.byteLength; i++) {
                     binary += String.fromCharCode(buffer[i]);
                 }
                 window.AndroidBridge.saveFile(btoa(binary), filename);
             } else {
-                // Desktop browser fallback
                 const link = document.createElement("a");
                 link.href = URL.createObjectURL(new Blob([buffer], { type: "application/octet-stream" }));
                 link.download = filename;
@@ -1449,24 +1488,44 @@
     }
 
     function loadFromLocalStorage() {
-        const base64String = localStorage.getItem('protobufData');
-        const fileName = localStorage.getItem('fileName');
-        if (!base64String) return;
-        const binaryString = atob(base64String);
-        const binaryArray = new Uint8Array(binaryString.length);
-        for (let i = 0; i < binaryString.length; i++) binaryArray[i] = binaryString.charCodeAt(i);
-        originalFilename = fileName;
-        document.getElementById("filenameInput").value = originalFilename || "default_filename";
         try {
+            const base64String = localStorage.getItem('protobufData');
+            const fileName = localStorage.getItem('fileName');
+            if (!base64String) return;
+            const binaryString = atob(base64String);
+            const binaryArray = new Uint8Array(binaryString.length);
+            for (let i = 0; i < binaryString.length; i++) binaryArray[i] = binaryString.charCodeAt(i);
+            originalFilename = fileName;
+            document.getElementById("filenameInput").value = originalFilename || "default_filename";
             const decodedMessage = UeCaps.decode(binaryArray);
             decodedData = UeCaps.toObject(decodedMessage, { defaults: true });
             processDecodedMessage(decodedData);
+
+            // Add this line: so the Batch Gen button also shows when restoring from cache
+            document.getElementById("batchGenBtn").style.display = "block";
+
             generateTable(decodedData);
-        } catch (error) {}
+        } catch (error) {
+            console.error("Local storage load failed:", error);
+        }
+    }
+
+    // Logic executed when clicking the restore progress button
+    function restoreSession() {
+        document.getElementById('welcomeScreen').style.display = 'none';
+        document.getElementById('mainUI').style.display = 'block';
+        loadFromLocalStorage();
     }
 
     window.addEventListener('beforeunload', function() { if (!clearSessionFlag) saveToLocalStorage(); });
-    window.addEventListener('load', function() { loadFromLocalStorage(); });
+
+    window.addEventListener('load', function() {
+        // Cancel auto-load on page load, instead check for cache and show restore button if exists
+        if (localStorage.getItem('protobufData')) {
+            document.getElementById('welcomeRestoreBtn').style.display = 'block';
+        }
+    });
+
     function updateFilename(newName) { originalFilename = newName; }
 
     function getFormattedDate() {
@@ -1526,27 +1585,6 @@ async function createZipWithSubdirectories() {
             });
         }
 
-        // Modify original FileInput listener to ensure Batch button shows after loading file
-        document.getElementById('fileInput').addEventListener('change', function(event) {
-            const file = event.target.files[0];
-            if (!file) return;
-            originalFilename = file.name.endsWith(".binarypb") ? file.name.slice(0, -9) : file.name;
-            document.getElementById("filenameInput").value = originalFilename || "default_filename";
-            const reader = new FileReader();
-            reader.onload = function(e) {
-                const buffer = new Uint8Array(e.target.result);
-                try {
-                    const decodedMessage = UeCaps.decode(buffer);
-                    decodedData = UeCaps.toObject(decodedMessage, { defaults: true });
-                    processDecodedMessage(decodedData);
-                    document.getElementById("batchGenBtn").style.display = "block"; // Show batch generation button
-                    generateTable(decodedData);
-                } catch (error) {
-                    document.getElementById('tableContainer').innerHTML = "Error decoding file: " + error.message;
-                }
-            };
-            reader.readAsArrayBuffer(file);
-        });
 
         /* ==========================================
            2. Batch generation window and algorithm (Ported from Python)
@@ -1598,17 +1636,8 @@ async function createZipWithSubdirectories() {
                 result.push({ band: bandNum, maxCc });
             }
 
-            // Deduplicate by band and take max CC
-            let bandMap = new Map();
-            for (let item of result) {
-                if (bandMap.has(item.band)) {
-                    let existing = bandMap.get(item.band);
-                    existing.maxCc = Math.max(existing.maxCc, item.maxCc);
-                } else {
-                    bandMap.set(item.band, item);
-                }
-            }
-            return Array.from(bandMap.values());
+            // Remove Map deduplication, allowing b7+b7 to produce two independent {band: 7, maxCc: 1} objects (i.e. 7A+7A)
+            return result;
         }
 
         // Dynamically render DL / UL Index inputs for NR bands when input bands change
@@ -1696,10 +1725,10 @@ async function createZipWithSubdirectories() {
             let maxTotal = parseInt(document.getElementById("batchMaxBands").value) || 4;
             let maxLteCc = parseInt(document.getElementById("batchMaxLteCc").value) || 5;
             let maxNrCc = parseInt(document.getElementById("batchMaxNrCc").value) || 5;
-            let anchorsInput = document.getElementById("batchAnchors").value.split(',').map(b => parseInt(b.trim())).filter(b => !isNaN(b));
+            let anchorsInput = document.getElementById("batchAnchors").value.split(',').map(b => parseInt(b.trim().replace(/^[bBnN]/i, ''))).filter(b => !isNaN(b));
             let lteMimo = parseInt(document.getElementById("batchLteMimo").value) || 2;
 
-            // Extract specific Feature Indices for each NR band
+            // Extract Feature Index specific to each NR band
             let nrIndices = {};
             document.querySelectorAll('.nr-band-row').forEach(row => {
                 let b = parseInt(row.dataset.band);
@@ -1718,17 +1747,29 @@ async function createZipWithSubdirectories() {
 
             let allowConflict = document.getElementById("batchAllowConflict").checked;
             let restrictUl = document.getElementById("batchRestrictUl").checked;
+            let filterPrimary = document.getElementById("batchFilterPrimary").checked;
+            let primaryBands = document.getElementById("batchPrimaryBands").value.split(',').map(b => {
+                let n = parseInt(b.trim().replace(/^[bBnN]/i, ''));
+                return n < 10000 ? n + 10000 : n;
+            }).filter(b => !isNaN(b));
 
             const conflictPairs = [[1, 10001], [3, 10003], [7, 10007], [8, 10008], [28, 10028], [40, 10040], [41, 10041], [78, 10078], [42, 10078], [42, 10077]];
             let newGroups = [];
+            let comboFingerprints = new Set();
 
             for (let r = 1; r <= Math.min(maxTotal, bandDefs.length); r++) {
                 let combs = getCombinations(bandDefs, r);
 
                 for (let comb of combs) {
+                    // Add missing variable declarations, separating bands into LTE and NR
                     let lteBands = comb.filter(d => d.band < 10000);
                     let nrBands = comb.filter(d => d.band > 10000);
                     if (nrBands.length === 0) continue;
+
+                    // 1. Sort strictly by band number in ascending order (never disrupt array sequence)
+                    lteBands.sort((a, b) => a.band - b.band);
+                    nrBands.sort((a, b) => a.band - b.band);
+                    comb = lteBands.concat(nrBands);
 
                     let mmwBands = nrBands.filter(d => [10257, 10258, 10260, 10261].includes(d.band));
                     if (mmwBands.length > 1) continue;
@@ -1747,60 +1788,88 @@ async function createZipWithSubdirectories() {
                         if (!hasAnchor) continue;
                     }
 
-                    let ccOptions = comb.map(d => Array.from({length: d.maxCc}, (_, i) => i + 1));
-                    let ccProds = cartesianProduct(ccOptions);
-
-                    for (let ccArr of ccProds) {
-                        let totalLteCc = 0;
-                        let totalNrCc = 0;
-                        for (let i = 0; i < comb.length; i++) {
-                            if (comb[i].band < 10000) totalLteCc += ccArr[i];
-                            else totalNrCc += ccArr[i];
-                        }
-
-                        if (totalLteCc > maxLteCc || totalNrCc > maxNrCc) continue;
-
-                        let comboGroup = {
-                            comboHeader: {
-                                bcsNr: headerBcsNr,
-                                bcsIntraEndc: headerBcsIntra,
-                                bcsEutra: headerBcsEutra,
-                                powerClass: headerPowerC,
-                                intraBandEnDcSupport: headerIntraEndc
-                            },
-                            combo: [{ cc: [], bitMask: 0 }]
-                        };
-
-                        let ulLte = lteBands.length > 0 ? lteBands[0].band : null;
-                        let ulNr = nrBands.length > 0 ? nrBands[0].band : null;
-                        let isNsa = lteBands.length > 0;
-
-                        for (let i = 0; i < comb.length; i++) {
-                            let b = comb[i].band;
-                            let ccCount = ccArr[i];
-                            let isLTE = b < 10000;
-                            let hasUl = restrictUl ? (b === ulLte || b === ulNr) : true;
-
-                            let ccItem = { band: b, dlFeatureIndex: 0, ulFeatureIndex: 0 };
-
-                            if (isLTE) {
-                                ccItem.bwClassDL = {1:1, 2:3, 3:4, 4:5, 5:6}[ccCount] || ccCount;
-                                ccItem.bwClassUL = hasUl ? 1 : 0;
-                                ccItem.dlFeatureIndex = parseLteFeatureIndex({ mimo: lteMimo, count: ccCount, ran: 1 }).FeatureIndex;
-                                ccItem.ulFeatureIndex = hasUl ? parseLteFeatureIndex({ mimo: 1, count: 1, ran: 2 }).FeatureIndex : 0;
-                                ccItem.dlFeaturePerCCIds = new Uint8Array(Array(ccCount).fill(0));
-                                if (hasUl) ccItem.ulFeaturePerCCIds = new Uint8Array([0]);
-                                updateDependentValues(ccItem, 1);
-                            } else {
-                                let dlIdx = nrIndices[b]?.dl || 1;
-                                let ulIdx = isNsa ? (nrIndices[b]?.ulNsa || 1) : (nrIndices[b]?.ulSa || 1);
-                                ccItem.dlFeaturePerCCIds = new Uint8Array(Array(ccCount).fill(dlIdx));
-                                if (hasUl) ccItem.ulFeaturePerCCIds = new Uint8Array([ulIdx]);
-                                updateDependentValues(ccItem, 0); // Precisely calculate NR bandwidth class and Feature Index
+                    // 2. Find all possible candidate indices for NR UL allocation (resolves n78/n79 bidirectional generation issues)
+                    let possibleUlNrIndices = [];
+                    if (nrBands.length > 0) {
+                        if (filterPrimary && primaryBands.length > 0) {
+                            // If optimization is enabled and there are matching primary bands, mark "all" matching primary bands as UL candidates
+                            for (let i = 0; i < comb.length; i++) {
+                                if (comb[i].band > 10000 && primaryBands.includes(comb[i].band)) {
+                                    possibleUlNrIndices.push(i);
+                                }
                             }
-                            comboGroup.combo[0].cc.push(ccItem);
                         }
-                        newGroups.push(comboGroup);
+                        // If optimization is not enabled, or there are no primary bands in the current combination, default the first NR band as UL
+                        if (possibleUlNrIndices.length === 0) {
+                            possibleUlNrIndices.push(comb.findIndex(d => d.band > 10000));
+                        }
+                    } else {
+                        possibleUlNrIndices.push(-1);
+                    }
+
+                    // Generate an independent combination for each candidate UL allocation method
+                    for (let currentUlNrIdx of possibleUlNrIndices) {
+                        let ccOptions = comb.map(d => Array.from({length: d.maxCc}, (_, i) => i + 1));
+                        let ccProds = cartesianProduct(ccOptions);
+
+                        for (let ccArr of ccProds) {
+                            let totalLteCc = 0;
+                            let totalNrCc = 0;
+                            for (let i = 0; i < comb.length; i++) {
+                                if (comb[i].band < 10000) totalLteCc += ccArr[i];
+                                else totalNrCc += ccArr[i];
+                            }
+
+                            if (totalLteCc > maxLteCc || totalNrCc > maxNrCc) continue;
+
+                            let comboGroup = {
+                                comboHeader: {
+                                    bcsNr: headerBcsNr,
+                                    bcsIntraEndc: headerBcsIntra,
+                                    bcsEutra: headerBcsEutra,
+                                    powerClass: headerPowerC,
+                                    intraBandEnDcSupport: headerIntraEndc
+                                },
+                                combo: [{ cc: [], bitMask: 0 }]
+                            };
+
+                            let ulLteIdx = lteBands.length > 0 ? 0 : -1;
+                            let isNsa = lteBands.length > 0;
+
+                            for (let i = 0; i < comb.length; i++) {
+                                let b = comb[i].band;
+                                let ccCount = ccArr[i];
+                                let isLTE = b < 10000;
+                                // Key: Based on the UL index allocated by the outer loop, determine which one carries the uplink (UL)
+                                let hasUl = restrictUl ? (i === ulLteIdx || i === currentUlNrIdx) : true;
+
+                                let ccItem = { band: b, dlFeatureIndex: 0, ulFeatureIndex: 0 };
+
+                                if (isLTE) {
+                                    ccItem.bwClassDL = {1:1, 2:3, 3:4, 4:5, 5:6}[ccCount] || ccCount;
+                                    ccItem.bwClassUL = hasUl ? 1 : 0;
+                                    ccItem.dlFeatureIndex = parseLteFeatureIndex({ mimo: lteMimo, count: ccCount, ran: 1 }).FeatureIndex;
+                                    ccItem.ulFeatureIndex = hasUl ? parseLteFeatureIndex({ mimo: 1, count: 1, ran: 2 }).FeatureIndex : 0;
+                                    ccItem.dlFeaturePerCCIds = new Uint8Array(Array(ccCount).fill(0));
+                                    if (hasUl) ccItem.ulFeaturePerCCIds = new Uint8Array([0]);
+                                    updateDependentValues(ccItem, 1);
+                                } else {
+                                    let dlIdx = nrIndices[b]?.dl || 1;
+                                    let ulIdx = isNsa ? (nrIndices[b]?.ulNsa || 1) : (nrIndices[b]?.ulSa || 1);
+                                    ccItem.dlFeaturePerCCIds = new Uint8Array(Array(ccCount).fill(dlIdx));
+                                    if (hasUl) ccItem.ulFeaturePerCCIds = new Uint8Array([ulIdx]);
+                                    updateDependentValues(ccItem, 0);
+                                }
+                                comboGroup.combo[0].cc.push(ccItem);
+                            }
+
+                            // Fingerprint filtering: Since one has n78 with UL and another has n79 with UL, their fingerprints are different, and both will be successfully retained
+                            let fingerprint = comboGroup.combo[0].cc.map(c => `${c.band}:${c.bwClassDL}:${c.dlFeatureIndex}:${c.ulFeatureIndex}`).join('|');
+                            if (!comboFingerprints.has(fingerprint)) {
+                                comboFingerprints.add(fingerprint);
+                                newGroups.push(comboGroup);
+                            }
+                        }
                     }
                 }
             }
@@ -1814,6 +1883,82 @@ async function createZipWithSubdirectories() {
                 showAlert("Batch Gen", "No combinations generated due to constraints.");
             }
         }
+
+   // Ultimate Compatibility Version: Use Window Capture phase to forcibly intercept arrow keys, ensuring absolute effectiveness
+        window.addEventListener('keydown', function(e) {
+            let modal = document.getElementById('batchGenModal');
+            // Only trigger when the Batch Gen window is open
+            if (!modal || modal.style.display === 'none' || modal.style.display === '') return;
+
+            let active = document.activeElement;
+            if (!active || !['INPUT', 'SELECT'].includes(active.tagName)) return;
+            if (active.type === 'checkbox' || active.type === 'file') return;
+
+            // Support key codes for different browsers
+            let isUp = e.key === 'ArrowUp' || e.keyCode === 38;
+            let isDown = e.key === 'ArrowDown' || e.keyCode === 40;
+            let isLeft = e.key === 'ArrowLeft' || e.keyCode === 37;
+            let isRight = e.key === 'ArrowRight' || e.keyCode === 39;
+
+            if (!isUp && !isDown && !isLeft && !isRight) return;
+
+            // For text input boxes, allow left/right keys to move the cursor within the grid; jump only when the cursor reaches the end
+            if (active.type === 'text') {
+                if (isLeft && active.selectionStart > 0) return;
+                if (isRight && active.selectionEnd < active.value.length) return;
+            }
+
+            // Forcibly block default behavior (prevent number skipping, screen scrolling)
+            e.preventDefault();
+
+            let inputs = Array.from(modal.querySelectorAll('input:not([type="checkbox"]), select'))
+                              .filter(el => el.offsetWidth > 0 && el.offsetHeight > 0);
+
+            let idx = inputs.indexOf(active);
+            if (idx === -1) return;
+
+            let nextIdx = idx;
+
+            if (isLeft) {
+                nextIdx = Math.max(0, idx - 1);
+            } else if (isRight) {
+                nextIdx = Math.min(inputs.length - 1, idx + 1);
+            } else {
+                // Up/Down keys: Calculate geometric position in the screen (2D pathfinding)
+                let rect = active.getBoundingClientRect();
+                let candidates = [];
+                for (let i = 0; i < inputs.length; i++) {
+                    if (i === idx) continue;
+                    let r = inputs[i].getBoundingClientRect();
+                    if (isUp && r.bottom <= rect.top + 15) candidates.push({ i, r });
+                    if (isDown && r.top >= rect.bottom - 15) candidates.push({ i, r });
+                }
+
+                if (candidates.length > 0) {
+                    candidates.sort((a, b) => {
+                        let vDiff = isUp ? (rect.top - a.r.bottom) - (rect.top - b.r.bottom)
+                                         : (a.r.top - rect.bottom) - (b.r.top - rect.bottom);
+                        if (Math.abs(vDiff) > 20) return vDiff;
+                        return Math.abs(rect.left - a.r.left) - Math.abs(rect.left - b.r.left);
+                    });
+                    nextIdx = candidates[0].i;
+                } else {
+                    nextIdx = isUp ? Math.max(0, idx - 1) : Math.min(inputs.length - 1, idx + 1);
+                }
+            }
+
+            if (nextIdx !== idx) {
+                inputs[nextIdx].focus();
+                // Delay selection by 10 milliseconds to avoid being overwritten by subsequent native focus behavior of the browser
+                setTimeout(() => {
+                    try {
+                        if (inputs[nextIdx].type === 'text' || inputs[nextIdx].type === 'number') {
+                            inputs[nextIdx].select();
+                        }
+                    } catch(err) {}
+                }, 10);
+            }
+        }, { capture: true }); // <== Key point: capture: true ensures we intercept keys before the system
 
 </script>
 <!-- Modal for Batch Combo Generation -->
@@ -1885,13 +2030,27 @@ async function createZipWithSubdirectories() {
             </div>
 
             <!-- Row 6: Rules -->
-            <div class="form-group" style="gap: 8px;">
-                <label style="display:flex; align-items:center; gap:8px; font-size: 11px;">
-                    <input type="checkbox" id="batchAllowConflict"> Allow Conflicts (e.g. B3+n3, B42+n78)
-                </label>
-                <label style="display:flex; align-items:center; gap:8px; font-size: 11px;">
-                    <input type="checkbox" id="batchRestrictUl" checked> Restrict UL to Single Main Band
-                </label>
+            <div class="form-card" style="flex-direction: column; gap: 10px; padding: 12px;">
+                <div style="display: flex; align-items: center; justify-content: space-between; width: 100%;">
+                    <label style="display:flex; align-items:center; gap:8px; font-size: 12px; font-weight: 600; color: var(--md-primary);">
+                        <input type="checkbox" id="batchFilterPrimary" style="width: 18px; height: 18px;"> Optimize for Primary NR Bands
+                    </label>
+                </div>
+                <div id="primaryBandsContainer" style="width: 100%;">
+                    <span class="form-label">Preferred Primary NR Bands:</span>
+                    <input type="text" id="batchPrimaryBands" value="41, 77, 78, 79" placeholder="e.g. 41, 78" style="width: 100%; margin-top: 4px;">
+                    <p style="font-size: 10px; color: var(--md-on-surface-variant); margin: 4px 0 0 0;">
+                        When enabled, primary bands will be prioritized as the first NR carrier. Pure coverage combos (e.g., n1+n28) are still allowed.
+                    </p>
+                </div>
+                <div style="border-top: 1px dashed var(--md-outline); padding-top: 8px; display: flex; flex-direction: column; gap: 8px;">
+                    <label style="display:flex; align-items:center; gap:8px; font-size: 11px;">
+                        <input type="checkbox" id="batchAllowConflict"> Allow Conflicts (e.g. B3+n3)
+                    </label>
+                    <label style="display:flex; align-items:center; gap:8px; font-size: 11px;">
+                        <input type="checkbox" id="batchRestrictUl" checked> Restrict UL to Single Main Band
+                    </label>
+                </div>
             </div>
         </div>
 
@@ -1899,6 +2058,7 @@ async function createZipWithSubdirectories() {
             <button class="btn-json" onclick="closeBatchModal()">Cancel</button>
             <button class="btn-primary" onclick="executeBatchGeneration()">Generate</button>
         </div>
+
     </div>
 </div>
 </body>
