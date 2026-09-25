@@ -396,8 +396,9 @@
 		/* 6. Welcome Screen */
         #welcomeScreen {
             display: flex; flex-direction: column; align-items: center; justify-content: center;
-            height: 100vh; width: 100vw; background-color: var(--md-bg);
-            position: fixed; top: 0; left: 0; z-index: 5000;
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background-color: var(--md-bg);
+            z-index: 5000;
         }
         .welcome-card {
             background-color: var(--md-surface); padding: 40px 32px; border-radius: 24px;
@@ -1788,27 +1789,47 @@ async function createZipWithSubdirectories() {
                         if (!hasAnchor) continue;
                     }
 
-                    // 2. Find all possible candidate indices for NR UL allocation (resolves n78/n79 bidirectional generation issues)
-                    let possibleUlNrIndices = [];
+                    // 2. Find all candidate combinations that can be assigned NR UL (supports both single carrier and ULCA bi-directional generation)
+                    let enableUlCa = document.getElementById("batchUlCa").checked;
+                    let ulConfigurations = []; // Stores array containing UL indices, e.g. [[2], [3], [2, 3]]
+
                     if (nrBands.length > 0) {
+                        let singleUlIndices = [];
                         if (filterPrimary && primaryBands.length > 0) {
-                            // If optimization is enabled and there are matching primary bands, mark "all" matching primary bands as UL candidates
+                            // If optimization is enabled and there are matching primary bands, mark all matching primary bands as single UL candidates
                             for (let i = 0; i < comb.length; i++) {
                                 if (comb[i].band > 10000 && primaryBands.includes(comb[i].band)) {
-                                    possibleUlNrIndices.push(i);
+                                    singleUlIndices.push(i);
                                 }
                             }
                         }
-                        // If optimization is not enabled, or there are no primary bands in the current combination, default the first NR band as UL
-                        if (possibleUlNrIndices.length === 0) {
-                            possibleUlNrIndices.push(comb.findIndex(d => d.band > 10000));
+                        // If optimization is not enabled, or if there are no primary bands in current combo, default to using the first NR band as single UL
+                        if (singleUlIndices.length === 0) {
+                            singleUlIndices.push(comb.findIndex(d => d.band > 10000));
+                        }
+
+                        // Ensure all independent "single-carrier UL" configurations are added first so that single-carrier upload combos always exist
+                        singleUlIndices.forEach(idx => ulConfigurations.push([idx]));
+
+                        // Generate ULCA combinations under SA (when there are no LTE bands in the combo and at least two NR bands)
+                        if (enableUlCa && lteBands.length === 0 && nrBands.length >= 2) {
+                            let nrIndicesInComb = [];
+                            for (let i = 0; i < comb.length; i++) {
+                                if (comb[i].band > 10000) nrIndicesInComb.push(i);
+                            }
+                            // Pairwise matching, push dual upload (2CC ULCA) candidate index arrays into generation queue
+                            for (let i = 0; i < nrIndicesInComb.length; i++) {
+                                for (let j = i + 1; j < nrIndicesInComb.length; j++) {
+                                    ulConfigurations.push([nrIndicesInComb[i], nrIndicesInComb[j]]);
+                                }
+                            }
                         }
                     } else {
-                        possibleUlNrIndices.push(-1);
+                        ulConfigurations.push([-1]);
                     }
 
-                    // Generate an independent combination for each candidate UL allocation method
-                    for (let currentUlNrIdx of possibleUlNrIndices) {
+                    // Generate an independent combination for each candidate UL assignment array
+                    for (let currentUlNrIndices of ulConfigurations) {
                         let ccOptions = comb.map(d => Array.from({length: d.maxCc}, (_, i) => i + 1));
                         let ccProds = cartesianProduct(ccOptions);
 
@@ -1835,13 +1856,15 @@ async function createZipWithSubdirectories() {
 
                             let ulLteIdx = lteBands.length > 0 ? 0 : -1;
                             let isNsa = lteBands.length > 0;
+                            let isUlCaCombo = currentUlNrIndices.length > 1;
 
                             for (let i = 0; i < comb.length; i++) {
                                 let b = comb[i].band;
                                 let ccCount = ccArr[i];
                                 let isLTE = b < 10000;
-                                // Key: Based on the UL index allocated by the outer loop, determine which one carries the uplink (UL)
-                                let hasUl = restrictUl ? (i === ulLteIdx || i === currentUlNrIdx) : true;
+
+                                // Key point: Determine whether to attach UL to the band based on currentUlNrIndices assigned by outer loop
+                                let hasUl = restrictUl ? (isLTE ? (i === ulLteIdx) : currentUlNrIndices.includes(i)) : true;
 
                                 let ccItem = { band: b, dlFeatureIndex: 0, ulFeatureIndex: 0 };
 
@@ -1855,7 +1878,14 @@ async function createZipWithSubdirectories() {
                                     updateDependentValues(ccItem, 1);
                                 } else {
                                     let dlIdx = nrIndices[b]?.dl || 1;
-                                    let ulIdx = isNsa ? (nrIndices[b]?.ulNsa || 1) : (nrIndices[b]?.ulSa || 1);
+
+                                    // Apply corresponding UL Index based on scenario:
+                                    // 1. NSA combo: Use NSA
+                                    // 2. Under SA but belonging to extra generated ULCA dual uplink branch: Use NSA
+                                    // 3. Regular SA single uplink branch: Use SA
+                                    let ulIdx = isNsa ? (nrIndices[b]?.ulNsa || 1) :
+                                                (isUlCaCombo ? (nrIndices[b]?.ulNsa || 1) : (nrIndices[b]?.ulSa || 1));
+
                                     ccItem.dlFeaturePerCCIds = new Uint8Array(Array(ccCount).fill(dlIdx));
                                     if (hasUl) ccItem.ulFeaturePerCCIds = new Uint8Array([ulIdx]);
                                     updateDependentValues(ccItem, 0);
@@ -2049,6 +2079,10 @@ async function createZipWithSubdirectories() {
                     </label>
                     <label style="display:flex; align-items:center; gap:8px; font-size: 11px;">
                         <input type="checkbox" id="batchRestrictUl" checked> Restrict UL to Single Main Band
+                    </label>
+                    <!-- Added ULCA option -->
+                    <label style="display:flex; align-items:center; gap:8px; font-size: 11px;">
+                        <input type="checkbox" id="batchUlCa"> Auto-generate SA ULCA (Use NSA UL Index)
                     </label>
                 </div>
             </div>
