@@ -74,6 +74,12 @@
 
 ---
 
+## 🙏 特別鳴謝 (Acknowledgments)
+
+* **[NXij/pixel-pb](https://github.com/NXij/pixel-pb)**：特別感謝原作者 NXij。視覺化編輯器（`index_md3.html`）的核心介面佈局、UECAP Protobuf 解碼與頻段組合編碼邏輯啟發並源自於該專案。
+
+---
+
 ## ⚠️ 免責聲明
 
 本工具僅供通訊技術研究與基帶架構診斷使用。修改網絡配置可能違反當地電信商規範或無線電法規，請自行承擔由此帶來的硬體與法律風險。

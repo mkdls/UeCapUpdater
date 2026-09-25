@@ -74,6 +74,12 @@ The utility operates through a multi-stage runner:
 
 ---
 
+## 🙏 Acknowledgments
+
+* **[NXij/pixel-pb](https://github.com/NXij/pixel-pb)**: Special thanks to NXij. The core UI layout, UECAP Protobuf decoding, and band combination encoding logic in the visual editor (`index_md3.html`) are inspired by and based on `pixel-pb`.
+
+---
+
 ## ⚠️ Disclaimer
 
 This tool is designed for telecommunications research and network diagnostics. Modifying baseband parameters may violate local carrier terms or radio regulations. Use at your own risk.
