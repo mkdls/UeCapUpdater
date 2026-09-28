@@ -14,3 +14,9 @@
 .cxx
 local.properties
 .idea/planningMode.xml
+*.jks
+*.keystore
+*.apk
+*.aab
+*.ap_
+*.log

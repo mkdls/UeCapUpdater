@@ -2,27 +2,24 @@ name: Android CI 自動發佈
 
 on:
   push:
-    branches: [ "main" ] # 如果你的主分支叫 master，請改成 master
-
+    branches: [ "main" ] # 若主分支為 master 請自行更換
     paths-ignore:
-      - '**.md'      # 忽略所有的 Markdown 檔案 (如 README.md, README_zh.md)
-      - 'LICENSE'    # 忽略版權聲明檔案
-      - '.gitignore' # 忽略 git 設定檔
+      - '**.md'
+      - 'LICENSE'
+      - '.gitignore'
 
 jobs:
   build:
     runs-on: ubuntu-latest
-
-    # ⚠️ 關鍵權限：允許 Actions 機器人幫你創建 Release
     permissions:
       contents: write
 
     steps:
       - name: 📥 檢出程式碼
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: ☕ 設定 JDK 17
-        uses: actions/setup-java@v3
+        uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
@@ -31,30 +28,29 @@ jobs:
       - name: 🔑 賦予 gradlew 執行權限
         run: chmod +x gradlew
 
-      - name: 🔨 編譯 Debug APK
-        run: ./gradlew assembleDebug
+      - name: 🔨 編譯 Debug APK 並注入動態版本號
+        run: |
+          ./gradlew assembleDebug \
+            -Pandroid.injected.version.code=${{ github.run_number }} \
+            -Pandroid.injected.version.name="1.0.${{ github.run_number }}"
 
-      - name: 🏷️ 自動重命名 APK 並加入版本號
-        # 利用 github.run_number (執行次數) 作為動態版本號
+      - name: 🏷️ 自動重命名 APK
         run: |
           mv app/build/outputs/apk/debug/app-debug.apk UECapUpdater-v1.0.${{ github.run_number }}.apk
-          echo "APK 已重命名為 UECapUpdater-v1.0.${{ github.run_number }}.apk"
 
-      - name: 🚀 自動發佈到 GitHub Releases (直接提供 APK 下載)
-        uses: softprops/action-gh-release@v1
+      - name: 🚀 自動發佈到 GitHub Releases
+        uses: softprops/action-gh-release@v2
         with:
-          tag_name: build-${{ github.run_number }}
+          tag_name: v1.0.${{ github.run_number }}
           name: UECapUpdater v1.0.${{ github.run_number }}
           body: |
             ## 🚀 Automated Release / 自動編譯版本發佈
             
-            * **Version / 版本號**: `v1.0.${{ github.run_number }}`
-            * **Build Date / 編譯日期**: 2026-07-03
+            * **Version / 內部版本**: `v1.0.${{ github.run_number }}` (Build Code: `${{ github.run_number }}`)
             
             ---
             
-            ### 📝 Update Log / 更新內容 (Commit Message)
-            
+            ### 📝 Update Log / 更新內容
             ```text
             ${{ github.event.head_commit.message }}
             ```

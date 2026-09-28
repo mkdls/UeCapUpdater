@@ -1,4 +1,3 @@
-// 🚀 關鍵修復 1：必須在檔案最頂端匯入 Protobuf 擴充函式庫，才能消除紅線並解決語法衝突
 import com.google.protobuf.gradle.*
 
 plugins {
@@ -88,7 +87,6 @@ protobuf {
     generateProtoTasks {
         all().forEach { task ->
             task.builtins {
-                // 🚀 關鍵修復 2：有了最上方的 import 後，這裡就能安全使用 id() 且不會報錯了
                 id("java") {
                     option("lite")
                 }
