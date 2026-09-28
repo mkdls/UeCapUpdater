@@ -14,7 +14,7 @@
 * **設備 (Device)**: Google Pixel 9 Pro Fold
 * **系統版本 (OS Version)**: Android 17 
 * **修補程式版本 (Build Number)**: `CP2A.260605.021`
-* **Root 框架 (Root Environment)**: Magisk `30.7 (30700)` / KernelSU
+* **Root 框架 (Root Environment)**: Magisk `30.7 (30700)` 
 
 ---
 
