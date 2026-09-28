@@ -14,7 +14,7 @@ A baseband configuration overriding and editing tool tailored for Google Pixel d
 * **Device**: Google Pixel 9 Pro Fold
 * **OS Version**: Android 17
 * **Build Number**: `CP2A.260605.021`
-* **Root Environment**: Magisk `30.7 (30700)` / KernelSU
+* **Root Environment**: Magisk `30.7 (30700)` 
 
 ---
 
