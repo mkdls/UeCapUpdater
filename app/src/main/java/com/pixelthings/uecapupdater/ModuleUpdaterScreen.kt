@@ -18,13 +18,10 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.topjohnwu.superuser.Shell
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import androidx.compose.runtime.MutableState
-import kotlinx.coroutines.isActive
 
 @Composable
 fun ModuleUpdaterScreen(
@@ -155,96 +152,24 @@ fun ModuleUpdaterScreen(
                 applySuccess = null
                 logText += if (isEn) "🚀 Batch applying ${detectedFiles.size} configurations...\n" else "🚀 開始批量套用 ${detectedFiles.size} 個配置檔...\n"
 
+                val selectedConfigs = detectedFiles.toList()
                 coroutineScope.launch(Dispatchers.IO) {
-                    var successCount = 0
-                    val publish = { line: String -> coroutineScope.launch(Dispatchers.Main) { shellLogs = (shellLogs ?: "") + line + "\n" } }
-
-                    publish(if (isEn) "[INFO] Resetting Logcat buffer..." else "[INFO] 正在重設 Logcat 緩衝區...")
-                    Shell.cmd("logcat -b all -c").exec()
-                    delay(1500)
-
-                    publish(if (isEn) "[INFO] Starting real-time Logcat stream daemon..." else "[INFO] 啟動即時 Logcat 監控守護進程...")
-                    val logcatProcess = Runtime.getRuntime().exec(arrayOf("su", "-c", "logcat -v time -b all"))
-                    val logcatJob = launch(Dispatchers.IO) {
-                        try {
-                            logcatProcess.inputStream.bufferedReader().use { reader ->
-                                var line: String? = null
-                                while (coroutineContext.isActive && reader.readLine().also { line = it } != null) {
-                                    val currentLine = line ?: continue
-                                    if ((currentLine.contains("UECAP", true) || currentLine.contains("shamp", true)) &&
-                                        !currentLine.contains("com.pixelthings.uecapupdater")) {
-                                        publish("[Logcat] $currentLine")
-                                        delay(1)
-                                    }
-                                }
-                            }
-                        } catch (e: Exception) {
-                            publish(if (isEn) "[INFO] Logcat stream disconnected gracefully." else "[INFO] Logcat 串流已正常斷開。")
+                    try {
+                        val success = applyModuleConfigsRealTime(context, selectedConfigs, isEn) { line ->
+                            shellLogs = ((shellLogs ?: "") + line + "\n").takeLast(100_000)
                         }
-                    }
-
-                    publish(if (isEn) "[INFO] Requesting Root to scan & unmount active overrides in PID 1..." else "[INFO] 請求 Root 掃描並卸載 PID 1 中的活動掛載...")
-                    publish(if (isEn) "[INFO] (This may take up to 5 seconds depending on Root overhead...)" else "[INFO] (這可能需要長達 5 秒，視 Root 響應速度而定...)")
-                    val cleanPrevMountsScript = """
-
-                        for m in ${'$'}(grep "uecapconfig" /proc/mounts | awk '{print ${'$'}2}'); do
-                            umount -l "${'$'}m" 2>/dev/null
-                        done
-                        for f in /vendor/firmware/uecapconfig/*.binarypb; do
-                            umount -l "${'$'}f" 2>/dev/null
-                        done
-                    """.trimIndent()
-                    Shell.cmd("cat << 'EOF' > /data/local/tmp/unmount_uecap.sh\n$cleanPrevMountsScript\nEOF").exec()
-                    Shell.cmd("chmod 755 /data/local/tmp/unmount_uecap.sh && nsenter -t 1 -m -- /data/local/tmp/unmount_uecap.sh && rm -f /data/local/tmp/unmount_uecap.sh").exec()
-                    Shell.cmd("rm -rf /data/vendor/radio/modem_temp_file/*").exec()
-
-                    for (fileInfo in detectedFiles) {
-                        val (success, fileLog) = ModuleParser.applyPbFile(context, fileInfo, isEn)
-                        fileLog.lines().filter { it.isNotBlank() }.forEach { publish("[INFO] $it") }
-
                         withContext(Dispatchers.Main) {
-                            if (success) {
-                                successCount++
-                                logText += if (isEn) "✅ [${fileInfo.fileName}] mounted\n" else "✅ [${fileInfo.fileName}] 掛載成功\n"
+                            applySuccess = success
+                            logText += if (success) {
+                                if (isEn) "Batch apply completed.\n" else "批量套用完成。\n"
                             } else {
-                                logText += if (isEn) "❌ [${fileInfo.fileName}] failed\n" else "❌ [${fileInfo.fileName}] 掛載失敗\n"
+                                if (isEn) "Batch apply failed. See stage logs.\n" else "批量套用失敗，請查看階段日誌。\n"
                             }
                         }
-                    }
-
-                    publish("-------------------------------------------------")
-                    publish(if (isEn) "[INFO] Triggering deep hardware modem reset (AT+GOOGCPRESET)..." else "[INFO] 觸發底層硬體數據機重置 (AT+GOOGCPRESET)...")
-// 🚀 向底層 umts_router 寫入 AT 指令，強制 CP (Cellular Processor) 徹底斷電冷啟動，強迫重讀 NV 快取！
-                    Shell.cmd("echo -e 'AT+GOOGCPRESET\\r' > /dev/umts_router").exec()
-
-                    publish(if (isEn) "[INFO] Awaiting initial baseband parser process..." else "[INFO] 等待初始基帶解析程序...")
-                    delay(4000)
-
-                    publish(if (isEn) "[INFO] Reviving network and waiting for hardware registration..." else "[INFO] 恢復網路並等待硬體註冊...")
-                    Shell.cmd("svc data disable").exec()
-                    delay(1000)
-                    Shell.cmd("svc data enable").exec()
-
-                    // 🚀 呼叫智慧信號守護進程，不到黃河心不死
-                    val isLocked = awaitSignalLock(isEn) { line -> publish(line) }
-                    if (!isLocked) {
-                        publish(if (isEn) "[ERROR] Baseband might be unstable. Please check Terminal for deep errors." else "[錯誤] 基帶可能不穩定。請檢查終端機以獲取深層錯誤。")
-                    }
-                    publish("=================================================")
-                    publish(if (isEn) "=== Done ===" else "=== 執行完畢 ===")
-
-                    logcatProcess.destroy()
-                    logcatJob.cancel()
-
-                    val bootScriptSuccess = ModuleParser.createMagiskModule(isEn)
-                    if (bootScriptSuccess) {
-                        publish(if (isEn) "[INFO] 👉 Magisk boot mount module generated successfully!" else "[INFO] 👉 Magisk 開機掛載模組已成功生成！")
-                    }
-
-                    withContext(Dispatchers.Main) {
-                        applySuccess = (successCount == detectedFiles.size)
-                        logText += if (isEn) "🎉 Batch process done! $successCount files applied.\n" else "🎉 批量執行完畢！共成功套用 $successCount 個檔案。\n"
-                        isApplying = false
+                    } finally {
+                        withContext(kotlinx.coroutines.NonCancellable + Dispatchers.Main) {
+                            isApplying = false
+                        }
                     }
                 }
             },

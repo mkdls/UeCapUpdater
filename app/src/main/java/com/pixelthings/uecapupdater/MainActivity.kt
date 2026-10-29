@@ -357,7 +357,7 @@ fun MainScreen(viewModel: RootStatusViewModel = viewModel()) {
                                 applySuccess = null
                                 coroutineScope.launch {
                                     val success = applyModemConfigRealTime(context, isEn) { line ->
-                                        shellLogs = (shellLogs ?: "") + line + "\n"
+                                        shellLogs = ((shellLogs ?: "") + line + "\n").takeLast(100_000)
                                     }
                                     applySuccess = success
                                     isApplying = false
@@ -391,7 +391,7 @@ fun MainScreen(viewModel: RootStatusViewModel = viewModel()) {
                                 applySuccess = null
                                 coroutineScope.launch {
                                     val success = resetModemConfigRealTime(context, isEn) { line ->
-                                        shellLogs = (shellLogs ?: "") + line + "\n"
+                                        shellLogs = ((shellLogs ?: "") + line + "\n").takeLast(100_000)
                                     }
                                     applySuccess = success
                                     isResetting = false
@@ -823,211 +823,23 @@ suspend fun copyMultipleFiles(
     return@withContext Pair(results, errorLogs.toString())
 }
 
-// 🚀 智慧拆解：單檔套用協程流式實時日誌 (混合 Logcat 即時流)
+// Both entry points share the same checked, timed mount pipeline.
 suspend fun applyModemConfigRealTime(context: Context, isEn: Boolean, onLogLine: (String) -> Unit): Boolean =
-    withContext(Dispatchers.IO) {
-        suspend fun publish(line: String) {
-            withContext(Dispatchers.Main) { onLogLine(line) }
-        }
-        val privateDir = context.filesDir.absolutePath
+    runModemOperation(context, isEn, reset = false, onLogLine = onLogLine)
 
-        publish("=================================================")
-        publish(if (isEn) "          ✨ Loading Custom UECAP Configs ✨      " else "          ✨ 正在載入自定義 UECAP 配置 ✨       ")
-        publish("=================================================")
-
-        publish(if (isEn) "[INFO] Resetting Logcat buffer..." else "[INFO] 正在重設 Logcat 緩衝區...")
-        Shell.cmd("logcat -b all -c").exec()
-        delay(1500) // 🚀 關鍵修復 1：給系統足夠時間把舊日誌沖刷乾淨
-
-        publish(if (isEn) "[INFO] Starting real-time Logcat stream daemon..." else "[INFO] 啟動即時 Logcat 監控守護進程...")
-        val logcatProcess = Runtime.getRuntime().exec(arrayOf("su", "-c", "logcat -v time -b all"))
-        val logcatJob = launch(Dispatchers.IO) {
-            try {
-                logcatProcess.inputStream.bufferedReader().use { reader ->
-                    var line: String? = null
-                    // 使用 while 搭配 yields 確保協程隨時可被安全釋放，且不阻塞線程
-                    while (isActive && reader.readLine().also { line = it } != null) {
-                        val currentLine = line ?: continue
-                        if ((currentLine.contains("UECAP", true) || currentLine.contains("shamp", true)) &&
-                            !currentLine.contains("com.pixelthings.uecapupdater")) {
-                            // 確保 publish 內部安全，若 UI 來不及刷就暫緩 1 毫秒
-                            publish("[Logcat] $currentLine")
-                            delay(1)
-                        }
-                    }
-                }
-            } catch (e: Exception) {
-                publish(if (isEn) "[INFO] Logcat stream disconnected gracefully." else "[INFO] Logcat 串流已正常斷開。")
-            }
-        }
-
-        publish(if (isEn) "[INFO] Requesting Root to scan & unmount active overrides in PID 1..." else "[INFO] 請求 Root 掃描並卸載 PID 1 中的活動掛載...")
-        publish(if (isEn) "[INFO] (This may take up to 5 seconds depending on Root overhead...)" else "[INFO] (這可能需要長達 5 秒，視 Root 響應速度而定...)")
-        val unmountScript = """
-            for m in ${'$'}(grep "uecapconfig" /proc/mounts | awk '{print ${'$'}2}'); do
-                umount -l "${'$'}m" 2>/dev/null
-            done
-            for f in /vendor/firmware/uecapconfig/*.binarypb; do
-                umount -l "${'$'}f" 2>/dev/null
-            done
-        """.trimIndent()
-        Shell.cmd("cat << 'EOF' > /data/local/tmp/unmount_uecap.sh\n$unmountScript\nEOF").exec()
-        Shell.cmd("chmod 755 /data/local/tmp/unmount_uecap.sh && nsenter -t 1 -m -- /data/local/tmp/unmount_uecap.sh && rm -f /data/local/tmp/unmount_uecap.sh").exec()
-
-        publish(if (isEn) "[INFO] Cleaning cache directories..." else "[INFO] 正在清理緩存目錄...")
-        Shell.cmd("rm -rf /data/vendor/radio/ota_uecap/* /data/vendor/radio/modem_temp_file/*").exec()
-
-        publish(if (isEn) "[INFO] Processing and staging configurations..." else "[INFO] 正在處理並暫存配置...")
-        val pbFiles = File(privateDir).listFiles { _, name -> name.endsWith(".binarypb") } ?: emptyArray()
-        for (file in pbFiles) {
-            val targetOta = "/data/vendor/radio/ota_uecap/${file.name}"
-            Shell.cmd("cp \"${file.absolutePath}\" \"$targetOta\"").exec()
-            Shell.cmd("chown radio:radio \"$targetOta\" && chcon u:object_r:vendor_file:s0 \"$targetOta\" && chmod 644 \"$targetOta\"").exec()
-        }
-
-        publish(if (isEn) "[INFO] Executing batch binding mounts..." else "[INFO] 正在執行批量掛載...")
-        val mountScript = """
-            #!/system/bin/sh
-            for TARGET_OTA in /data/vendor/radio/ota_uecap/*.binarypb; do
-                if [ -f "${'$'}TARGET_OTA" ]; then
-                    FILENAME=${'$'}(basename "${'$'}TARGET_OTA")
-                    TARGET_VENDOR="/vendor/firmware/uecapconfig/${'$'}FILENAME"
-                    if [ -f "${'$'}TARGET_VENDOR" ]; then
-                        mount -o bind "${'$'}TARGET_OTA" "${'$'}TARGET_VENDOR"
-                        if [ ${'$'}? -eq 0 ]; then
-                            echo "[INFO] 👉 ${'$'}FILENAME globally mounted"
-                        else
-                            echo "[INFO] ❌ ${'$'}FILENAME bind failed"
-                        fi
-                    fi
-                fi
-            done
-        """.trimIndent()
-        Shell.cmd("cat << 'EOF' > /data/local/tmp/mount_uecap.sh\n$mountScript\nEOF").exec()
-        val mountResult = Shell.cmd("chmod 755 /data/local/tmp/mount_uecap.sh && nsenter -t 1 -m -- /data/local/tmp/mount_uecap.sh && rm -f /data/local/tmp/unmount_uecap.sh").exec()
-        mountResult.out.forEach { publish(it) }
-
-        publish("-------------------------------------------------")
-        publish(if (isEn) "[INFO] Triggering deep hardware modem reset (AT+GOOGCPRESET)..." else "[INFO] 觸發底層硬體數據機重置 (AT+GOOGCPRESET)...")
-// 🚀 向底層 umts_router 寫入 AT 指令，強制 CP (Cellular Processor) 徹底斷電冷啟動，強迫重讀 NV 快取！
-        Shell.cmd("echo -e 'AT+GOOGCPRESET\\r' > /dev/umts_router").exec()
-
-        publish(if (isEn) "[INFO] Awaiting initial baseband parser process..." else "[INFO] 等待初始基帶解析程序...")
-        delay(4000)
-
-        publish(if (isEn) "[INFO] Reviving network and waiting for hardware registration..." else "[INFO] 恢復網路並等待硬體註冊...")
-        Shell.cmd("svc data disable").exec()
-        delay(1000)
-        Shell.cmd("svc data enable").exec()
-
-        // 🚀 呼叫智慧信號守護進程，不到黃河心不死
-        val isLocked = awaitSignalLock(isEn) { line -> publish(line) }
-        if (!isLocked) {
-            publish(if (isEn) "[ERROR] Baseband might be unstable. Please check Terminal for deep errors." else "[錯誤] 基帶可能不穩定。請檢查終端機以獲取深層錯誤。")
-        }
-        publish("=================================================")
-        publish(if (isEn) "=== Done ===" else "=== 執行完畢 ===")
-
-        // 🛑 停止背景 Logcat 監聽
-        logcatProcess.destroy()
-        logcatJob.cancel()
-
-        ModuleParser.createMagiskModule(isEn)
-        return@withContext true
-    }
-
-// 🚀 智慧拆解：恢復原廠協程流式實時日誌 (混合 Logcat 即時流)
 suspend fun resetModemConfigRealTime(context: Context, isEn: Boolean, onLogLine: (String) -> Unit): Boolean =
-    withContext(Dispatchers.IO) {
-        suspend fun publish(line: String) {
-            withContext(Dispatchers.Main) { onLogLine(line) }
-        }
-
-        publish("=================================================")
-        publish(if (isEn) "          ✨ Restoring Factory Baseband ✨       " else "          ✨ 正在恢復原廠基帶設定 ✨       ")
-        publish("=================================================")
-
-        publish(if (isEn) "[INFO] Resetting Logcat buffer..." else "[INFO] 正在重設 Logcat 緩衝區...")
-        Shell.cmd("logcat -b all -c").exec()
-        delay(1500) // 🚀 關鍵修復 1：給系統足夠時間把舊日誌沖刷乾淨
-
-        publish(if (isEn) "[INFO] Starting real-time Logcat stream daemon..." else "[INFO] 啟動即時 Logcat 監控守護進程...")
-        val logcatProcess = Runtime.getRuntime().exec(arrayOf("su", "-c", "logcat -v time -b all"))
-        val logcatJob = launch(Dispatchers.IO) {
-            try {
-                logcatProcess.inputStream.bufferedReader().use { reader ->
-                    var line: String? = null
-                    // 使用 while 搭配 yields 確保協程隨時可被安全釋放，且不阻塞線程
-                    while (isActive && reader.readLine().also { line = it } != null) {
-                        val currentLine = line ?: continue
-                        if ((currentLine.contains("UECAP", true) || currentLine.contains("shamp", true)) &&
-                            !currentLine.contains("com.pixelthings.uecapupdater")) {
-                            // 確保 publish 內部安全，若 UI 來不及刷就暫緩 1 毫秒
-                            publish("[Logcat] $currentLine")
-                            delay(1)
-                        }
-                    }
-                }
-            } catch (e: Exception) {
-                publish(if (isEn) "[INFO] Logcat stream disconnected gracefully." else "[INFO] Logcat 串流已正常斷開。")
-            }
-        }
-
-        publish(if (isEn) "[INFO] Requesting Root to scan & unmount active overrides in PID 1..." else "[INFO] 請求 Root 掃描並卸載 PID 1 中的活動掛載...")
-        publish(if (isEn) "[INFO] (This may take up to 5 seconds depending on Root overhead...)" else "[INFO] (這可能需要長達 5 秒，視 Root 響應速度而定...)")
-        val unmountScript = """
-            for m in ${'$'}(grep "uecapconfig" /proc/mounts | awk '{print ${'$'}2}'); do
-                umount -l "${'$'}m" 2>/dev/null
-                echo "[INFO] 🔄 ${'$'}m successfully unmounted"
-            done
-            for f in /vendor/firmware/uecapconfig/*.binarypb; do
-                umount -l "${'$'}f" 2>/dev/null
-            done
-        """.trimIndent()
-        Shell.cmd("cat << 'EOF' > /data/local/tmp/unmount_uecap.sh\n$unmountScript\nEOF").exec()
-        val unmountResult = Shell.cmd("chmod 755 /data/local/tmp/unmount_uecap.sh && nsenter -t 1 -m -- /data/local/tmp/unmount_uecap.sh && rm -f /data/local/tmp/unmount_uecap.sh").exec()
-        unmountResult.out.forEach { publish(it) }
-
-        publish(if (isEn) "[INFO] Cleaning cache directories..." else "[INFO] 正在清理緩存目錄...")
-        Shell.cmd("rm -rf /data/vendor/radio/ota_uecap/* /data/vendor/radio/modem_temp_file/*").exec()
-
-        publish(if (isEn) "[INFO] Triggering deep hardware modem reset (AT+GOOGCPRESET)..." else "[INFO] 觸發底層硬體數據機重置 (AT+GOOGCPRESET)...")
-// 🚀 向底層 umts_router 寫入 AT 指令，強制 CP (Cellular Processor) 徹底斷電冷啟動，強迫重讀 NV 快取！
-        Shell.cmd("echo -e 'AT+GOOGCPRESET\\r' > /dev/umts_router").exec()
-
-        publish(if (isEn) "[INFO] Awaiting hardware fallback to pure factory state..." else "[INFO] 等待硬體回退至純淨原廠狀態...")
-        delay(4000)
-
-        publish(if (isEn) "[INFO] Reviving factory network and waiting for carrier registration..." else "[INFO] 恢復原廠網路並等待電信商註冊...")
-        Shell.cmd("svc data disable").exec()
-        delay(1000)
-        Shell.cmd("svc data enable").exec()
-
-        // 🚀 呼叫智慧信號守護進程，不到黃河心不死
-        val isLocked = awaitSignalLock(isEn) { line -> publish(line) }
-        if (!isLocked) {
-            publish(if (isEn) "[ERROR] Baseband might be unstable. Please check Terminal for deep errors." else "[錯誤] 基帶可能不穩定。請檢查終端機以獲取深層錯誤。")
-        }
-        publish("=================================================")
-        publish(if (isEn) "=== Factory Reset Complete ===" else "=== 原廠恢復完成 ===")
-
-        logcatProcess.destroy()
-        logcatJob.cancel()
-
-        ModuleParser.removeMagiskModule()
-        return@withContext true
-    }
+    runModemOperation(context, isEn, reset = true, onLogLine = onLogLine)
 
 // 🚀 核心升級：動態信號鎖定守護進程 (過濾歷史日誌 ＋ 正向計時)
 suspend fun awaitSignalLock(isEn: Boolean, publish: suspend (String) -> Unit): Boolean {
     publish(if (isEn) "[INFO] Monitoring native Android telephony state..." else "[INFO] 正在監控原生 Android 通訊狀態...")
     var realSignalConfirmed = false
-    var counter = 0
-    val maxWaitSeconds = 90 // 安全底線
+    val startedAt = android.os.SystemClock.elapsedRealtime()
+    val maxWaitMillis = 90_000L
 
-    while (!realSignalConfirmed && counter < maxWaitSeconds) {
-        counter++
+    while (!realSignalConfirmed && android.os.SystemClock.elapsedRealtime() - startedAt < maxWaitMillis) {
         delay(1000)
+        val counter = ((android.os.SystemClock.elapsedRealtime() - startedAt) / 1000).toInt()
 
         // 1. 查詢系統通訊註冊表，並「切斷」底部的歷史紀錄 (Local logs) 以防讀取到舊的殘留狀態！
         val rawOutput = Shell.cmd("dumpsys telephony.registry").exec().out
@@ -1043,7 +855,7 @@ suspend fun awaitSignalLock(isEn: Boolean, publish: suspend (String) -> Unit): B
                 publish(if (isEn) "[INFO] ⏳ Waiting for baseband hardware power-on... (Elapsed: ${counter}s)" else "[INFO] ⏳ 等待基帶硬體上電... (已耗時: ${counter}秒)")
             }
         } else {
-            // 8 秒過後，歷史假訊號已被徹底洗淨。此時檢查到的絕對是當前真實連線狀態！
+            // Retain the existing settling grace period; service state alone does not prove UECAP activation.
             if (hasSystemSignal) {
                 publish(if (isEn) "[INFO] ✅ Android System Telephony Registry is IN_SERVICE. (Locked at ${counter}s)" else "[INFO] ✅ Android 系統通訊註冊表顯示已在服務中。(鎖定於 ${counter}秒)")
                 realSignalConfirmed = true
@@ -1055,13 +867,6 @@ suspend fun awaitSignalLock(isEn: Boolean, publish: suspend (String) -> Unit): B
 
     if (!realSignalConfirmed) {
         publish(if (isEn) "[WARN] ⚠️ Reached 90s safety timeout. The modem might be stuck or searching for network." else "[警告] ⚠️ 已達到 90秒 安全超時。數據機可能卡住或正在搜索網路。")
-    } else {
-        // 訊號確定回來後，執行最終日誌打撈 (正向讀秒)
-        publish(if (isEn) "[INFO] Capturing final UECAP handshakes & flushing logs..." else "[INFO] 擷取最終 UECAP 握手並刷新日誌...")
-        for (i in 1..5) {
-            publish(if (isEn) "[INFO] ⏳ Finalizing baseband streams... (Elapsed: ${i}s / 5s)" else "[INFO] ⏳ 正在完成基帶串流... (已耗時: ${i}秒 / 5秒)")
-            delay(1000)
-        }
     }
 
     return realSignalConfirmed
